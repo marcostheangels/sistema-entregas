@@ -17,6 +17,21 @@ const IconNav = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
 );
 
+// Distancia em linha reta entre dois pontos (km)
+const haversineKm = (a, b) => {
+  if (!a || !b) return null;
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lng - a.lng) * Math.PI / 180;
+  const h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
+// Estimativa de tempo (min) com media de 25 km/h em zona urbana
+const minEstimado = (km) => (km == null ? null : Math.max(1, Math.round(km / (25 / 60))));
+
 // -- MAP COMPONENTS --
 function MapUpdater({ position }) {
   const map = useMap();
@@ -82,14 +97,7 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
   const nomeEmpresa = entrega.empresaNome || empresas[entrega.empresaId]?.nome || 'Estabelecimento';
   const distParaColeta = useMemo(() => {
     if (!posicao || !entrega.origemCoords) return null;
-    const R = 6371; // Raio da Terra em km
-    const dLat = (entrega.origemCoords.lat - posicao.lat) * Math.PI / 180;
-    const dLon = (entrega.origemCoords.lng - posicao.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(posicao.lat * Math.PI / 180) * Math.cos(entrega.origemCoords.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
+    return haversineKm(posicao, entrega.origemCoords);
   }, [posicao, entrega.origemCoords]);
 
   return (
@@ -97,7 +105,7 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
       <div className="delivery-header">
         <span className="delivery-price">R$ {entrega.valor}</span>
         <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
-          {distParaColeta !== null && <span className="delivery-dist" style={{fontSize: '0.7rem', color: 'var(--warning)'}}>Até a coleta: {distParaColeta.toFixed(1)} km</span>}
+          {distParaColeta !== null && <span className="delivery-dist" style={{fontSize: '0.7rem', color: 'var(--warning)'}}>Até a coleta: {distParaColeta.toFixed(1)} km (~{minEstimado(distParaColeta)} min)</span>}
           {entrega.distanciaKm && <span className="delivery-dist" style={{fontSize: '0.7rem'}}>Entrega: {entrega.distanciaKm.toFixed(1)} km</span>}
         </div>
       </div>
@@ -473,7 +481,7 @@ export default function Dashboard({ user }) {
     }
   };
 
-  const calcRoute = async (entrega) => {
+  const calcRoute = async (entrega, direto = false) => {
     if (!entrega.origemCoords || !entrega.destinoCoords) return;
     try {
       const { lat: oLat, lng: oLng } = entrega.origemCoords;
@@ -483,17 +491,20 @@ export default function Dashboard({ user }) {
       // Se não, calculamos apenas entre os pontos da entrega.
       const p = posicao || { lat: oLat, lng: oLng };
 
-      // Montamos a URL com 3 pontos: [Entregador] -> [Coleta] -> [Entrega]
-      const url = `https://router.project-osrm.org/route/v1/driving/${p.lng},${p.lat};${oLng},${oLat};${dLng},${dLat}?overview=full&geometries=geojson`;
+      // direto=true (apos a coleta): rota [Entregador] -> [Entrega]
+      // direto=false: rota [Entregador] -> [Coleta] -> [Entrega]
+      const waypoints = direto
+        ? `${p.lng},${p.lat};${dLng},${dLat}`
+        : `${p.lng},${p.lat};${oLng},${oLat};${dLng},${dLat}`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${waypoints}?overview=full&geometries=geojson`;
       const res = await fetch(url).then(r => r.json());
 
       if (res.routes?.[0]) {
         const r = res.routes[0];
-
         setRotaInfo({
           distanciaTotal: r.distance / 1000,
-          distanciaColeta: (r.legs[0]?.distance || 0) / 1000,
-          distanciaEntrega: (r.legs[1]?.distance || 0) / 1000,
+          distanciaColeta: direto ? 0 : (r.legs[0]?.distance || 0) / 1000,
+          distanciaEntrega: (r.legs[r.legs.length - 1]?.distance || 0) / 1000,
           tempoTotal: Math.round(r.duration / 60),
           coords: r.geometry.coordinates
         });
@@ -513,6 +524,12 @@ export default function Dashboard({ user }) {
     if (statusFiltro === 'minhas') return e.entregadorId === user.uid && (e.status === 'aceite' || e.status === 'em_transito');
     return e.entregadorId === user.uid && e.status === 'entregue';
   });
+
+  // Entrega em navegacao SEMPRE com o status mais recente (vem da lista ao vivo)
+  const entregaAtual = entregaEmRota ? (entregas.find(e => e.id === entregaEmRota.id) || entregaEmRota) : null;
+  // Distancias ao vivo, estilo Uber: busca o pedido e depois leva o pedido
+  const kmColeta = posicao && entregaAtual?.origemCoords ? haversineKm(posicao, entregaAtual.origemCoords) : null;
+  const kmDestino = posicao && entregaAtual?.destinoCoords ? haversineKm(posicao, entregaAtual.destinoCoords) : null;
 
   return (
     <div className="app-container">
@@ -642,45 +659,80 @@ export default function Dashboard({ user }) {
                       alert('Esta entrega já foi aceita por outro entregador.');
                     }
                   } else if (item.status === 'aceite') {
-                    update(ref(db, `entregas/${item.id}`), { status: 'em_transito' });
-                    if (!isOnline) toggleTracking(true);
+                    // Abre a navegacao em modo BUSCANDO O PEDIDO (confirma a coleta no mapa)
+                    setEntregaEmRota(item);
+                    calcRoute(item, false);
                   } else if (item.status === 'em_transito') {
                     setEntregaEmRota(item);
-                    calcRoute(item);
+                    calcRoute(item, true);
                   }
                 }}
-                actionLabel={e.status === 'pendente' ? 'ACEITAR' : (e.status === 'aceite' ? 'INICIAR ROTA' : 'VER MAPA')}
-                actionColor={e.status === 'em_transito' ? 'var(--secondary)' : null}
+                actionLabel={e.status === 'pendente' ? 'ACEITAR' : (e.status === 'aceite' ? 'VER ROTA' : 'VER MAPA')}
+                actionColor={e.status === 'aceite' ? '#f59e0b' : (e.status === 'em_transito' ? 'var(--secondary)' : null)}
               />
             ))
           )}
         </div>
       </main>
 
-      {entregaEmRota && (
+      {entregaAtual && (
         <div className="route-overlay">
           <div className="route-header">
-            <button className="btn-back" onClick={() => setEntregaEmRota(null)}>←</button>
+            <button className="btn-back" onClick={() => { setEntregaEmRota(null); setRotaInfo(null); }}>←</button>
             <div style={{flex: 1}}><h2 style={{fontSize: '1rem', fontWeight: 800}}>Navegação</h2></div>
-            <div className="delivery-dist">R$ {entregaEmRota.valor}</div>
+            <div className="delivery-dist">R$ {entregaAtual.valor}</div>
           </div>
           <div className="map-container">
-            <RotaMapa posicao={posicao} entrega={entregaEmRota} rotaInfo={rotaInfo} />
+            <RotaMapa posicao={posicao} entrega={entregaAtual} rotaInfo={rotaInfo} />
             <div className="map-ui-floating">
+              {/* Banner ao vivo, estilo Uber/99: km ate a coleta e depois ate a entrega */}
+              {entregaAtual.status === 'aceite' && (
+                <div style={{background: 'linear-gradient(90deg, #f59e0b, #d97706)', color: 'white', borderRadius: '12px', padding: '10px 14px', marginBottom: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.25)'}}>
+                  <div style={{fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.06em', opacity: 0.9}}>🛵 BUSCANDO O PEDIDO</div>
+                  <div style={{fontSize: '1.25rem', fontWeight: 900}}>
+                    {kmColeta != null ? `${kmColeta.toFixed(1)} km até a coleta` : ' indo até a coleta...'}
+                    {kmColeta != null && <span style={{fontSize: '0.8rem', fontWeight: 700, opacity: 0.9}}> (~{minEstimado(kmColeta)} min)</span>}
+                  </div>
+                </div>
+              )}
+              {entregaAtual.status === 'em_transito' && (
+                <div style={{background: 'linear-gradient(90deg, #10b981, #059669)', color: 'white', borderRadius: '12px', padding: '10px 14px', marginBottom: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.25)'}}>
+                  <div style={{fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.06em', opacity: 0.9}}>📦 LEVANDO O PEDIDO</div>
+                  <div style={{fontSize: '1.25rem', fontWeight: 900}}>
+                    {kmDestino != null ? `${kmDestino.toFixed(1)} km até a entrega` : ' indo até a entrega...'}
+                    {kmDestino != null && <span style={{fontSize: '0.8rem', fontWeight: 700, opacity: 0.9}}> (~{minEstimado(kmDestino)} min)</span>}
+                  </div>
+                </div>
+              )}
               <div className="route-meta">
-                <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaTotal?.toFixed(1) || '--'}</span><span className="meta-lab">KM TOTAL</span></div>
-                <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaColeta?.toFixed(1) || '--'}</span><span className="meta-lab">COLETA</span></div>
-                <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaEntrega?.toFixed(1) || '--'}</span><span className="meta-lab">ENTREGA</span></div>
-                <div className="meta-box"><span className="meta-val">{rotaInfo?.tempoTotal || '--'}</span><span className="meta-lab">MIN</span></div>
+                <div className="meta-box"><span className="meta-val">{kmColeta != null ? kmColeta.toFixed(1) : rotaInfo?.distanciaColeta?.toFixed(1) || '--'}</span><span className="meta-lab">KM BUSCAR</span></div>
+                <div className="meta-box"><span className="meta-val">{kmDestino != null ? kmDestino.toFixed(1) : rotaInfo?.distanciaEntrega?.toFixed(1) || '--'}</span><span className="meta-lab">KM LEVAR</span></div>
+                <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaTotal?.toFixed(1) || '--'}</span><span className="meta-lab">KM ROTA</span></div>
+                <div className="meta-box"><span className="meta-val">{rotaInfo?.tempoTotal || '--'}</span><span className="meta-lab">MIN ROTA</span></div>
               </div>
               <div className="nav-shortcuts">
-                <a href={`https://www.google.com/maps/dir/?api=1&destination=${entregaEmRota.destinoCoords.lat},${entregaEmRota.destinoCoords.lng}`} target="_blank" className="btn-nav-action gmaps">GOOGLE MAPS</a>
-                <a href={`waze://?ll=${entregaEmRota.destinoCoords.lat},${entregaEmRota.destinoCoords.lng}&navigate=yes`} className="btn-nav-action waze">WAZE</a>
+                <a href={`https://www.google.com/maps/dir/?api=1&destination=${entregaAtual.destinoCoords?.lat},${entregaAtual.destinoCoords?.lng}`} target="_blank" className="btn-nav-action gmaps">GOOGLE MAPS</a>
+                <a href={`waze://?ll=${entregaAtual.destinoCoords?.lat},${entregaAtual.destinoCoords?.lng}&navigate=yes`} className="btn-nav-action waze">WAZE</a>
+                {entregaAtual.status === 'aceite' && (
+                  <button
+                    className="btn-nav-action"
+                    style={{background: '#f59e0b', color: '#fff', flex: 1.5}}
+                    onClick={async () => {
+                      // Marca que pegou o pedido: muda para LEVANDO e recalcula a rota direto ao destino
+                      await update(ref(db, `entregas/${entregaAtual.id}`), { status: 'em_transito', coletaAt: Date.now() });
+                      if (!isOnline) toggleTracking(true);
+                      calcRoute(entregaAtual, true);
+                    }}
+                  >
+                    ✅ PEGUEI O PEDIDO
+                  </button>
+                )}
+                {entregaAtual.status === 'em_transito' && (
                 <button
                   className="btn-nav-action"
                   style={{background: 'var(--success)', color: '#fff', flex: 1.5}}
                   onClick={async () => {
-                    const entregaId = entregaEmRota.id;
+                    const entregaId = entregaAtual.id;
                     await update(ref(db, `entregas/${entregaId}`), { status: 'entregue', entregueEm: Date.now() });
                     setEntregaEmRota(null);
                     setRotaInfo(null);
@@ -699,6 +751,7 @@ export default function Dashboard({ user }) {
                 >
                   FINALIZAR
                 </button>
+                )}
               </div>
             </div>
           </div>
