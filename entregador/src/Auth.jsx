@@ -60,6 +60,12 @@ export default function Auth({ onAuth }) {
           createdAt: Date.now()
         });
 
+        // Solicitação de aprovação para o administrador
+        await set(ref(db, `aprovacoes/${cred.user.uid}`), {
+          tipo: 'entregador', nome, email,
+          aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
+        });
+
         onAuth(cred.user);
       }
     } catch (err) {
