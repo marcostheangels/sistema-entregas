@@ -193,6 +193,13 @@ function ChatFlutuanteEnt({ uid, entregas, online, oculto }) {
     }
   }, [ativos, conversas, ativo]);
 
+  // Ao abrir o chat (ou chegar entrega ativa), seleciona automaticamente a conversa
+  useEffect(() => {
+    if (aberto && !ativo && ativos.length > 0) {
+      setAtivo(ativos[0]);
+    }
+  }, [aberto, ativos, ativo]);
+
   // Fecha o painel quando nao ha mais entrega ativa nem historico
   useEffect(() => {
     if (aberto && ativos.length === 0 && Object.keys(conversas).length === 0) {
@@ -494,8 +501,6 @@ export default function Dashboard({ user }) {
   const empresasBloqueadasRef = useRef({});
   const [mensagemNova, setMensagemNova] = useState(null);
   const lastMsgTs = useRef(Date.now());
-  const [resposta, setResposta] = useState('');
-  const [respostaOk, setRespostaOk] = useState(false);
   const workerRef = useRef(null);
   const wakeLockRef = useRef(null);
 
@@ -548,40 +553,12 @@ export default function Dashboard({ user }) {
       if (maisNova) {
         lastMsgTs.current = maisNova.timestamp;
         setMensagemNova(maisNova);
-        setResposta('');
-        setRespostaOk(false);
         tocarChimeMensagem();
         addLog('Mensagem da empresa: ' + maisNova.texto);
       }
     });
     return unsub;
   }, [user.uid]);
-
-  // Resposta do entregador para a empresa
-  const enviarResposta = async () => {
-    const t = resposta.trim();
-    if (!t || !mensagemNova) return;
-    // Exige entrega ativa real com a empresa da mensagem
-    const entregaAtiva = entregas.find(e => e.empresaId === mensagemNova.empresaId && e.entregadorId === user.uid && ['aceite', 'em_transito'].includes(e.status));
-    if (!entregaAtiva) return;
-    try {
-      await push(ref(db, 'mensagens'), {
-        empresaId: mensagemNova.empresaId,
-        entregadorId: user.uid,
-        empresaNome: mensagemNova.empresaNome || '',
-        entregaId: entregaAtiva.id,
-        texto: t.slice(0, 500),
-        de: 'entregador',
-        timestamp: Date.now()
-      });
-      setResposta('');
-      setRespostaOk(true);
-      addLog('Resposta enviada para ' + (mensagemNova.empresaNome || 'empresa'));
-      setTimeout(() => { setMensagemNova(null); setRespostaOk(false); }, 2500);
-    } catch (e) {
-      addLog('Erro ao responder: ' + e.message);
-    }
-  };
 
   useEffect(() => {
     checkPerms();
@@ -904,31 +881,6 @@ export default function Dashboard({ user }) {
               return <span key={id} style={{textTransform:'uppercase', background:'#f59e0b', color:'white', padding:'2px 6px', borderRadius:'4px', margin:'2px', display:'inline-block'}}>{emp?.nome || 'Empresa'}</span>
             })}
             <div style={{marginTop: '5px', fontSize: '0.75rem', fontWeight: 500}}>Você não receberá pedidos dessas empresas.</div>
-          </div>
-        )}
-
-        {mensagemNova && (
-          <div style={{ background: '#eef2ff', border: '1px solid #6366f1', color: '#312e81', padding: '14px', borderRadius: '12px', marginBottom: '15px' }}>
-            <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '4px' }}>
-              Mensagem de {mensagemNova.empresaNome || 'Empresa'}
-            </div>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{mensagemNova.texto}</div>
-            <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: '4px' }}>{new Date(mensagemNova.timestamp).toLocaleTimeString('pt-BR')}</div>
-            {respostaOk ? (
-              <div style={{ marginTop: '10px', fontSize: '0.8rem', fontWeight: 800, color: '#0e9f6e' }}>Resposta enviada!</div>
-            ) : entregas.some(e => e.empresaId === mensagemNova.empresaId && ['aceite', 'em_transito'].includes(e.status)) ? (
-              <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
-                <input value={resposta} onChange={e => setResposta(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviarResposta(); }}
-                  placeholder="Responder à empresa..." maxLength={500}
-                  style={{ flex: 1, padding: '8px 10px', borderRadius: '8px', border: '1px solid #c7d2fe', fontSize: '0.85rem', color: '#312e81', background: 'white' }} />
-                <button onClick={enviarResposta} style={{ background: '#6366f1', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem' }}>ENVIAR</button>
-                <button onClick={() => setMensagemNova(null)} style={{ background: 'transparent', color: '#6366f1', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem' }}>OK</button>
-              </div>
-            ) : (
-              <div style={{ marginTop: '10px', fontSize: '0.75rem', fontStyle: 'italic', opacity: 0.75 }}>
-                Responder disponível somente durante uma entrega ativa com esta empresa.
-              </div>
-            )}
           </div>
         )}
 
