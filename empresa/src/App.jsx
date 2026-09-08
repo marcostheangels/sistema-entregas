@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth } from './firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { ref, get, set } from 'firebase/database';
+import { ref, set, onValue } from 'firebase/database';
 import { db } from './firebase';
 import Dashboard from './Dashboard';
 import './App.css';
@@ -98,24 +98,26 @@ function Login({ onAuth }) {
 function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
-  const [aprovado, setAprovado] = useState(null); // null = sem registro (antigo) | true | false
+  const [aprovado, setAprovado] = useState(false); // so entra com aprovacao explicita do admin
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
+    let unsubAprov = null;
+    const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (!u) { setAprovado(null); setInitializing(false); return; }
-      // Verifica aprovação do administrador (cadastros antigos sem registro passam direto)
-      get(ref(db, `aprovacoes/${u.uid}`)).then(s => {
-        if (s.exists()) setAprovado(s.val().aprovado === true);
-        else setAprovado(null);
+      if (unsubAprov) { unsubAprov(); unsubAprov = null; }
+      if (!u) { setAprovado(false); setInitializing(false); return; }
+      // Escuta em tempo real: quando o admin aprovar, o painel destrava sozinho
+      unsubAprov = onValue(ref(db, `aprovacoes/${u.uid}/aprovado`), s => {
+        setAprovado(s.val() === true);
         setInitializing(false);
-      }).catch(() => { setAprovado(null); setInitializing(false); });
+      }, () => { setAprovado(false); setInitializing(false); });
     });
+    return () => { unsub(); if (unsubAprov) unsubAprov(); };
   }, []);
 
   if (initializing) return <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>Iniciando...</div>;
 
-  if (user && aprovado === false) return <AguardandoAprovacao user={user} onSair={() => signOut(auth)} />;
+  if (user && !aprovado) return <AguardandoAprovacao user={user} onSair={() => signOut(auth)} />;
 
   return user ? <Dashboard user={user} /> : <Login onAuth={setUser} />;
 }
