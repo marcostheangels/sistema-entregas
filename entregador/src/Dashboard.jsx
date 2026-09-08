@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push, get } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-import L from 'leaflet';
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { backgroundLocation } from './plugins/BackgroundLocation';
 import AppSettings from './plugins/Settings';
@@ -32,118 +32,272 @@ const haversineKm = (a, b) => {
 // Estimativa de tempo (min) com media de 25 km/h em zona urbana
 const minEstimado = (km) => (km == null ? null : Math.max(1, Math.round(km / (25 / 60))));
 
-// -- MAP COMPONENTS --
-// Marcador estilo Uber/99: circulo colorido com emoji
-const iconeEmoji = (emoji, cor) => L.divIcon({
-  html: `<div style="width:38px;height:38px;border-radius:50%;background:${cor};display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:2.5px solid white;">${emoji}</div>`,
-  className: '',
-  iconSize: [38, 38],
-  iconAnchor: [19, 19]
-});
-
-// Icones fixos: moto (voce), empresa (coleta) e casa (destino)
-const iconMoto = iconeEmoji('🛵', '#3b82f6');
-const iconEmpresa = iconeEmoji('🏢', '#f59e0b');
-const iconCasa = iconeEmoji('🏠', '#10b981');
-
-function MapUpdater({ position }) {
-  const map = useMap();
-  // Depois que o usuario arrasta ou da zoom, o mapa para de seguir por 15s (e nao reseta o zoom)
-  const interagiu = useRef(false);
-  const timer = useRef(null);
-  const jaCentrou = useRef(false);
-  useEffect(() => {
-    const marcar = () => {
-      interagiu.current = true;
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => { interagiu.current = false; }, 15000);
-    };
-    map.on('dragstart', marcar);
-    map.on('zoomstart', marcar);
-    return () => {
-      map.off('dragstart', marcar);
-      map.off('zoomstart', marcar);
-      clearTimeout(timer.current);
-    };
-  }, [map]);
-  useEffect(() => {
-    if (!position || interagiu.current) return;
-    // Primeira centralizacao aproxima; depois mantem o zoom escolhido pelo usuario
-    if (!jaCentrou.current) {
-      map.setView([position.lat, position.lng], 16);
-      jaCentrou.current = true;
-    } else {
-      map.setView([position.lat, position.lng], map.getZoom());
+// -- MAP COMPONENTS (MapLibre GL: camera gira e inclina, estilo Uber/99) --
+// Estilo do mapa: tiles raster do OpenStreetMap (gratis, sem chave)
+const estiloMapaOsm = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxzoom: 19
     }
-  }, [position, map]);
-  return null;
+  },
+  layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+};
+
+// Marcador estilo Uber/99: circulo colorido com emoji (elemento DOM)
+const elMarcador = (emoji, cor, tamanho = 38) => {
+  const el = document.createElement('div');
+  el.style.cssText = `width:${tamanho}px;height:${tamanho}px;border-radius:50%;background:${cor};display:flex;align-items:center;justify-content:center;font-size:${Math.round(tamanho * 0.5)}px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:2.5px solid white;`;
+  el.textContent = emoji;
+  return el;
+};
+
+// Rumo (bearing em graus) indo do ponto a para o ponto b
+const calcularRumo = (a, b) => {
+  const dLon = (b.lng - a.lng) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(b.lat * Math.PI / 180);
+  const x = Math.cos(a.lat * Math.PI / 180) * Math.sin(b.lat * Math.PI / 180) -
+            Math.sin(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+};
+
+// Rumo atual (ref atualizada a cada deslocamento de 10 m ou mais)
+function useRumo(posicao) {
+  const prevRef = useRef(null);
+  const rumoRef = useRef(0);
+  useEffect(() => {
+    if (!posicao) return;
+    const prev = prevRef.current;
+    if (prev && haversineKm(prev, posicao) > 0.01) {
+      rumoRef.current = calcularRumo(prev, posicao);
+    }
+    prevRef.current = posicao;
+  }, [posicao]);
+  return rumoRef;
 }
 
+// Mapa de navegacao: camera gira junto com a direcao da moto, inclinada estilo Uber
 const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
-  const center = useMemo(() => {
-    if (posicao) return [posicao.lat, posicao.lng];
-    if (entrega?.origemCoords) return [entrega.origemCoords.lat, entrega.origemCoords.lng];
-    return [-19.9369, -44.9328];
-  }, [posicao, entrega]);
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const prontoRef = useRef(false);
+  const markerMotoRef = useRef(null);
+  const markerColetaRef = useRef(null);
+  const markerDestinoRef = useRef(null);
+  const rumoRef = useRumo(posicao);
+  const seguindoRef = useRef(true);
+  const [seguindo, setSeguindo] = useState(true);
+
+  // Cria o mapa uma unica vez
+  useEffect(() => {
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: estiloMapaOsm,
+      center: [-44.9328, -19.9369],
+      zoom: 16,
+      pitch: 55,
+      bearing: 0,
+      attributionControl: false
+    });
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+    map.on('load', () => {
+      prontoRef.current = true;
+      map.addSource('rota', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'linha-rota', type: 'line', source: 'rota',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#6366f1', 'line-width': 7, 'line-opacity': 0.85 }
+      });
+      map.resize();
+    });
+    // Qualquer gesto do usuario (arrastar, girar, inclinar, zoom) assume o controle da camera
+    const soltar = () => { seguindoRef.current = false; setSeguindo(false); };
+    map.on('dragstart', soltar);
+    map.on('rotatestart', (e) => { if (e.originalEvent) soltar(); });
+    map.on('pitchstart', (e) => { if (e.originalEvent) soltar(); });
+    map.on('zoomstart', (e) => { if (e.originalEvent) soltar(); });
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  // Desenha a rota de estrada (OSRM)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const aplicar = () => {
+      const src = map.getSource('rota');
+      if (!src) return;
+      src.setData({
+        type: 'FeatureCollection',
+        features: rotaInfo?.coords?.length
+          ? [{ type: 'Feature', geometry: { type: 'LineString', coordinates: rotaInfo.coords } }]
+          : []
+      });
+    };
+    if (prontoRef.current) aplicar(); else map.once('load', aplicar);
+  }, [rotaInfo]);
+
+  // Marcadores de coleta (empresa) e destino (casa)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const montar = () => {
+      markerColetaRef.current?.remove(); markerColetaRef.current = null;
+      markerDestinoRef.current?.remove(); markerDestinoRef.current = null;
+      if (entrega?.origemCoords) {
+        markerColetaRef.current = new maplibregl.Marker({ element: elMarcador('🏢', '#f59e0b', 34) })
+          .setLngLat([entrega.origemCoords.lng, entrega.origemCoords.lat]).addTo(map);
+      }
+      if (entrega?.destinoCoords) {
+        markerDestinoRef.current = new maplibregl.Marker({ element: elMarcador('🏠', '#10b981', 34) })
+          .setLngLat([entrega.destinoCoords.lng, entrega.destinoCoords.lat]).addTo(map);
+      }
+    };
+    if (prontoRef.current) montar(); else map.once('load', montar);
+  }, [entrega?.id, entrega?.origemCoords, entrega?.destinoCoords]);
+
+  // Moto + camera seguem a posicao (girando junto com o rumo)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !posicao) return;
+    if (!markerMotoRef.current) {
+      markerMotoRef.current = new maplibregl.Marker({
+        element: elMarcador('🛵', '#3b82f6', 40),
+        rotationAlignment: 'map', pitchAlignment: 'map'
+      }).setLngLat([posicao.lng, posicao.lat]).addTo(map);
+    } else {
+      markerMotoRef.current.setLngLat([posicao.lng, posicao.lat]);
+    }
+    markerMotoRef.current.setRotation(rumoRef.current);
+    if (seguindoRef.current) {
+      map.easeTo({ center: [posicao.lng, posicao.lat], bearing: rumoRef.current, pitch: 55, duration: 900 });
+    }
+  }, [posicao, rumoRef]);
+
+  const recentralizar = () => {
+    seguindoRef.current = true;
+    setSeguindo(true);
+    if (posicao && mapRef.current) {
+      mapRef.current.easeTo({ center: [posicao.lng, posicao.lat], bearing: rumoRef.current, pitch: 55, duration: 900 });
+    }
+  };
 
   return (
-    <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={true}>
-      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-      <MapUpdater position={posicao} />
-      {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconMoto}><Popup>Você</Popup></Marker>}
-      {entrega?.origemCoords && <Marker position={[entrega.origemCoords.lat, entrega.origemCoords.lng]} icon={iconEmpresa}><Popup>Coleta</Popup></Marker>}
-      {entrega?.destinoCoords && <Marker position={[entrega.destinoCoords.lat, entrega.destinoCoords.lng]} icon={iconCasa}><Popup>Entrega</Popup></Marker>}
-      {rotaInfo?.coords && <Polyline positions={rotaInfo.coords.map(c => [c[1], c[0]])} color="#6366f1" weight={6} opacity={0.8} />}
-    </MapContainer>
+    <div style={{ position: 'relative', height: '100%', width: '100%' }}>
+      <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
+      {!seguindo && (
+        <button onClick={recentralizar} style={{ position: 'absolute', bottom: '14px', left: '50%', transform: 'translateX(-50%)', background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--primary)', borderRadius: '99px', padding: '10px 18px', fontWeight: 800, fontSize: '0.72rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 1 }}>
+          🎯 SEGUIR MINHA ROTA
+        </button>
+      )}
+    </div>
   );
 };
 
-// Icone do entregador reutilizado nos mapas (moto, estilo Uber)
-const iconEntregador = iconMoto;
-
 // Mini mapa fixo no painel: localizacao atual do entregador, estilo Uber/99
-const MiniMapa = ({ posicao, online, onExpand }) => (
-  <div className="minimapa-wrap">
-    <div className="minimapa-header">
-      <span className="minimapa-titulo">📍 Minha localização</span>
-      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-        <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
-        <button className="minimapa-expand" onClick={onExpand} title="Abrir mapa em tela cheia">⛶</button>
+const MiniMapa = ({ posicao, online, onExpand }) => {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+
+  useEffect(() => {
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: estiloMapaOsm,
+      center: [-44.9328, -19.9369],
+      zoom: 16,
+      attributionControl: false
+    });
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    map.on('load', () => map.resize());
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !posicao) return;
+    if (!markerRef.current) {
+      markerRef.current = new maplibregl.Marker({ element: elMarcador('🛵', '#3b82f6', 34) })
+        .setLngLat([posicao.lng, posicao.lat]).addTo(map);
+      map.jumpTo({ center: [posicao.lng, posicao.lat], zoom: 16 });
+    } else {
+      markerRef.current.setLngLat([posicao.lng, posicao.lat]);
+      map.easeTo({ center: [posicao.lng, posicao.lat], duration: 800 });
+    }
+  }, [posicao]);
+
+  return (
+    <div className="minimapa-wrap">
+      <div className="minimapa-header">
+        <span className="minimapa-titulo">📍 Minha localização</span>
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
+          <button className="minimapa-expand" onClick={onExpand} title="Abrir mapa em tela cheia">⛶</button>
+        </div>
+      </div>
+      <div className="minimapa-mapa">
+        <div ref={containerRef} style={{height: '100%', width: '100%'}} />
+        {!posicao && <div className="minimapa-aguardando">Aguardando sinal do GPS...</div>}
       </div>
     </div>
-    <div className="minimapa-mapa">
-      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={true} attributionControl={false}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MapUpdater position={posicao} />
-        {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconEntregador}><Popup>Você está aqui</Popup></Marker>}
-      </MapContainer>
-      {!posicao && <div className="minimapa-aguardando">Aguardando sinal do GPS...</div>}
-    </div>
-  </div>
-);
+  );
+};
 
 // Mapa em tela cheia (botao ⛶ do mini mapa)
-const MapaCheio = ({ posicao, online, onClose }) => (
-  <div className="route-overlay">
-    <div className="route-header">
-      <button className="btn-back" onClick={onClose}>←</button>
-      <div style={{flex: 1}}><h2 style={{fontSize: '1rem', fontWeight: 800}}>Minha localização</h2></div>
-      <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
+const MapaCheio = ({ posicao, online, onClose }) => {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+
+  useEffect(() => {
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: estiloMapaOsm,
+      center: [-44.9328, -19.9369],
+      zoom: 16,
+      attributionControl: false
+    });
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+    map.on('load', () => map.resize());
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !posicao) return;
+    if (!markerRef.current) {
+      markerRef.current = new maplibregl.Marker({ element: elMarcador('🛵', '#3b82f6', 40) })
+        .setLngLat([posicao.lng, posicao.lat]).addTo(map);
+      map.jumpTo({ center: [posicao.lng, posicao.lat], zoom: 16 });
+    } else {
+      markerRef.current.setLngLat([posicao.lng, posicao.lat]);
+      map.easeTo({ center: [posicao.lng, posicao.lat], duration: 800 });
+    }
+  }, [posicao]);
+
+  return (
+    <div className="route-overlay">
+      <div className="route-header">
+        <button className="btn-back" onClick={onClose}>←</button>
+        <div style={{flex: 1}}><h2 style={{fontSize: '1rem', fontWeight: 800}}>Minha localização</h2></div>
+        <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
+      </div>
+      <div style={{flex: 1, position: 'relative'}}>
+        <div ref={containerRef} style={{height: '100%', width: '100%'}} />
+        {posicao && (
+          <div style={{position: 'absolute', bottom: '16px', left: '50%', transform: 'translateX(-50%)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '99px', padding: '8px 18px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 1}}>
+            📌 {posicao.lat.toFixed(5)}, {posicao.lng.toFixed(5)}
+          </div>
+        )}
+      </div>
     </div>
-    <div style={{flex: 1, position: 'relative'}}>
-      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={true}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MapUpdater position={posicao} />
-        {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconEntregador}><Popup>Você está aqui</Popup></Marker>}
-      </MapContainer>
-      {posicao && (
-        <div style={{position: 'absolute', bottom: '16px', left: '50%', transform: 'translateX(-50%)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '99px', padding: '8px 18px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'}}>
-          📌 {posicao.lat.toFixed(5)}, {posicao.lng.toFixed(5)}
-        </div>
-      )}
-    </div>
-  </div>
-);
+  );
+};
 
 // Chat flutuante do entregador: conversa com as empresas em entrega ativa (igual ao da empresa)
 function ChatFlutuanteEnt({ uid, entregas, online, oculto }) {

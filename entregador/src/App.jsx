@@ -4,7 +4,6 @@ import { ref, get, onValue, set } from 'firebase/database';
 import { auth, db } from './firebase';
 import Auth from './Auth';
 import Dashboard from './Dashboard';
-import 'leaflet/dist/leaflet.css';
 import './App.css';
 
 function AguardandoAprovacao({ user }) {
