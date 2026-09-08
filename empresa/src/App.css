@@ -474,6 +474,7 @@ header {
 
 .sugestao-item:last-child { border-bottom: none; }
 .sugestao-item:hover { background: var(--primary-soft); }
+.sugestao-item.ativo { background: var(--primary-soft); }
 
 /* ===================== MAPA (LEAFLET) ===================== */
 .leaflet-container {

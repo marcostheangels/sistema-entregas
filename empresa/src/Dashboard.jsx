@@ -13,19 +13,52 @@ import AppSettings from './plugins/Settings';
 function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
   const [input, setInput] = useState(value || '');
   const [sugestoes, setSugestoes] = useState([]);
+  const [destaque, setDestaque] = useState(-1); // item selecionado pelo teclado
+  const [aberto, setAberto] = useState(false);
   const timeoutRef = useRef(null);
+  const boxRef = useRef(null);
 
   useEffect(() => { setInput(value || ''); }, [value]);
 
-  const buscarEndereco = async (query) => {
-    if (query.length < 3) { setSugestoes([]); return; }
+  // Fecha o dropdown ao clicar fora
+  useEffect(() => {
+    const fechar = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setAberto(false); };
+    document.addEventListener('mousedown', fechar);
+    return () => document.removeEventListener('mousedown', fechar);
+  }, []);
+
+  // Autocomplete estilo Google: Photon (rapido, gratis) com fallback para Nominatim
+  const buscarEndereco = async (q) => {
+    if (q.length < 3) { setSugestoes([]); return; }
+    const bbox = '-44.2,-17.2,-43.5,-16.3'; // regiao de Montes Claros/MG
+    try {
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&bbox=${bbox}&limit=6&lang=pt`);
+      const data = await res.json();
+      const lista = (data.features || []).map(f => ({
+        coords: { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] },
+        p: f.properties || {}
+      }));
+      if (lista.length) { setSugestoes(lista); setAberto(true); setDestaque(-1); return; }
+    } catch { /* cai no fallback */ }
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)},+Montes+Claros,+MG,+Brasil&format=json&limit=5&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)},+Montes+Claros,+MG,+Brasil&format=json&limit=5&addressdetails=1`,
         { headers: { 'User-Agent': 'SistemaEntregas/1.0' } }
       );
       const data = await res.json();
-      setSugestoes(data);
+      setSugestoes(data.map(s => ({
+        coords: { lat: parseFloat(s.lat), lng: parseFloat(s.lon) },
+        p: {
+          nome: s.display_name.split(',')[0],
+          rua: s.address?.road || s.display_name.split(',')[0],
+          numero: s.address?.house_number || '',
+          bairro: s.address?.neighbourhood || s.address?.suburb || '',
+          cidade: s.address?.city_district || s.address?.city || 'Montes Claros',
+          cep: s.address?.postcode || ''
+        }
+      })));
+      setAberto(true);
+      setDestaque(-1);
     } catch (err) { console.log('Erro busca:', err); }
   };
 
@@ -34,30 +67,70 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
     setInput(val);
     onChange(val);
     clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => buscarEndereco(val), 500);
+    timeoutRef.current = setTimeout(() => buscarEndereco(val), 300);
+  };
+
+  const escolher = (sug) => {
+    const p = sug.p || {};
+    const numero = input.match(/\d+/)?.[0] || p.numero || p.housenumber || '';
+    const rua = p.rua || p.street || p.nome || p.name || '';
+    const bairro = p.bairro || p.district || p.neighbourhood || p.suburb || '';
+    const enderecoLimpo = `${rua}${numero ? ", " + numero : ""}${bairro ? " - " + bairro : ""}`;
+    setInput(enderecoLimpo);
+    onChange(enderecoLimpo);
+    onCoords(sug.coords);
+    setSugestoes([]);
+    setAberto(false);
+  };
+
+  const teclado = (e) => {
+    if (!aberto || !sugestoes.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setDestaque(d => Math.min(d + 1, sugestoes.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setDestaque(d => Math.max(d - 1, 0)); }
+    else if (e.key === 'Enter' && destaque >= 0) { e.preventDefault(); escolher(sugestoes[destaque]); }
+    else if (e.key === 'Escape') setAberto(false);
+  };
+
+  // Monta o texto de exibicao de cada sugestao
+  const linhasSugestao = (sug) => {
+    const p = sug.p || {};
+    const titulo = p.rua || p.street || p.nome || p.name || 'Endereço';
+    const numero = p.numero || p.housenumber || '';
+    const partes = [p.bairro || p.district || p.neighbourhood || '', p.cidade || p.city || p.county || '', p.cep ? `CEP ${p.cep}` : (p.postcode ? `CEP ${p.postcode}` : '')].filter(Boolean);
+    return { titulo: `${titulo}${numero ? ', ' + numero : ''}`, sub: partes.join(' • ') };
   };
 
   return (
-    <div className="form-group" style={{position: 'relative'}}>
+    <div className="form-group" style={{position: 'relative'}} ref={boxRef}>
       <label className="form-label">{label}</label>
-      <input type="text" placeholder={placeholder} value={input} onChange={handleChange} className="geo-input" />
-      {sugestoes.length > 0 && (
+      <div style={{position: 'relative'}}>
+        <span style={{position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.9rem', pointerEvents: 'none'}}>🔍</span>
+        <input type="text" placeholder={placeholder} value={input} onChange={handleChange} onKeyDown={teclado}
+          onFocus={() => { if (sugestoes.length) setAberto(true); }} className="geo-input" style={{paddingLeft: '38px'}} autoComplete="off" />
+        {input && (
+          <button type="button" onClick={() => { setInput(''); onChange(''); onCoords(null); setSugestoes([]); }}
+            style={{position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', color: '#a6adbd', padding: '4px'}}>✕</button>
+        )}
+      </div>
+      {aberto && sugestoes.length > 0 && (
         <div className="sugestoes">
-          {sugestoes.map((sug, i) => (
-            <div key={i} className="sugestao-item" onClick={() => {
-                const addr = sug.address || {};
-                const rua = addr.road || addr.street || "";
-                const bairro = addr.neighbourhood || addr.suburb || "";
-                const numero = input.match(/\d+/)?.[0] || addr.house_number || "";
-                const enderecoLimpo = `${rua}${numero ? ", " + numero : ""} - ${bairro}`;
-                setInput(enderecoLimpo);
-                onChange(enderecoLimpo);
-                onCoords({ lat: parseFloat(sug.lat), lng: parseFloat(sug.lon) });
-                setSugestoes([]);
-            }}>
-              {sug.display_name.split(',').slice(0,3).join(',')}
-            </div>
-          ))}
+          {sugestoes.map((sug, i) => {
+            const { titulo, sub } = linhasSugestao(sug);
+            return (
+              <div key={i} className={`sugestao-item ${i === destaque ? 'ativo' : ''}`}
+                onMouseEnter={() => setDestaque(i)}
+                onClick={() => escolher(sug)}>
+                <span style={{marginRight: '10px'}}>📍</span>
+                <span style={{display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
+                  <span style={{fontWeight: 700, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{titulo}</span>
+                  {sub && <span style={{fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{sub}</span>}
+                </span>
+              </div>
+            );
+          })}
+          <div style={{fontSize: '0.6rem', color: 'var(--text-muted)', textAlign: 'center', padding: '5px', borderTop: '1px solid var(--border)'}}>
+            Use as setas ↑↓ e Enter para selecionar
+          </div>
         </div>
       )}
     </div>
