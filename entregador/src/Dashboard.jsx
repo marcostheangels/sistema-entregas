@@ -820,6 +820,25 @@ export default function Dashboard({ user }) {
   // Distancias ao vivo, estilo Uber: busca o pedido e depois leva o pedido
   const kmColeta = posicao && entregaAtual?.origemCoords ? haversineKm(posicao, entregaAtual.origemCoords) : null;
   const kmDestino = posicao && entregaAtual?.destinoCoords ? haversineKm(posicao, entregaAtual.destinoCoords) : null;
+  const emColeta = entregaAtual?.status === 'aceite';
+  // KM LEVAR: na busca = trecho coleta->entrega da rota planejada; levando = rota real recalculada (fallback: linha reta)
+  const levarKm = emColeta
+    ? (rotaInfo?.distanciaEntrega ?? null)
+    : (rotaInfo?.distanciaEntrega ?? kmDestino);
+  const levarMin = emColeta
+    ? null
+    : (rotaInfo?.tempoTotal ?? (kmDestino != null ? minEstimado(kmDestino) : null));
+
+  // Recalcula a rota real quando o entregador se move (mais de 300 m do ultimo calculo)
+  const ultimaPosRota = useRef(null);
+  useEffect(() => {
+    if (!entregaAtual || !posicao) return;
+    if (entregaAtual.status !== 'em_transito') return;
+    if (!ultimaPosRota.current || haversineKm(ultimaPosRota.current, posicao) > 0.3) {
+      ultimaPosRota.current = posicao;
+      calcRoute(entregaAtual, true);
+    }
+  }, [posicao, entregaAtual]);
 
   return (
     <div className="app-container">
@@ -999,14 +1018,14 @@ export default function Dashboard({ user }) {
                 <div style={{background: 'linear-gradient(90deg, #10b981, #059669)', color: 'white', borderRadius: '12px', padding: '10px 14px', marginBottom: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.25)'}}>
                   <div style={{fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.06em', opacity: 0.9}}>📦 LEVANDO O PEDIDO</div>
                   <div style={{fontSize: '1.25rem', fontWeight: 900}}>
-                    {kmDestino != null ? `${kmDestino.toFixed(1)} km até a entrega` : ' indo até a entrega...'}
-                    {kmDestino != null && <span style={{fontSize: '0.8rem', fontWeight: 700, opacity: 0.9}}> (~{minEstimado(kmDestino)} min)</span>}
+                    {levarKm != null ? `${levarKm.toFixed(1)} km até a entrega` : ' calculando rota...'}
+                    {levarMin != null && <span style={{fontSize: '0.8rem', fontWeight: 700, opacity: 0.9}}> (~{levarMin} min)</span>}
                   </div>
                 </div>
               )}
               <div className="route-meta">
-                <div className="meta-box"><span className="meta-val">{kmColeta != null ? kmColeta.toFixed(1) : rotaInfo?.distanciaColeta?.toFixed(1) || '--'}</span><span className="meta-lab">KM BUSCAR</span></div>
-                <div className="meta-box"><span className="meta-val">{kmDestino != null ? kmDestino.toFixed(1) : rotaInfo?.distanciaEntrega?.toFixed(1) || '--'}</span><span className="meta-lab">KM LEVAR</span></div>
+                <div className="meta-box"><span className="meta-val">{emColeta ? (kmColeta != null ? kmColeta.toFixed(1) : '--') : '—'}</span><span className="meta-lab">KM BUSCAR</span></div>
+                <div className="meta-box"><span className="meta-val">{levarKm != null ? levarKm.toFixed(1) : '--'}</span><span className="meta-lab">KM LEVAR</span></div>
                 <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaTotal?.toFixed(1) || '--'}</span><span className="meta-lab">KM ROTA</span></div>
                 <div className="meta-box"><span className="meta-val">{rotaInfo?.tempoTotal || '--'}</span><span className="meta-lab">MIN ROTA</span></div>
               </div>
@@ -1021,6 +1040,7 @@ export default function Dashboard({ user }) {
                       // Marca que pegou o pedido: muda para LEVANDO e recalcula a rota direto ao destino
                       await update(ref(db, `entregas/${entregaAtual.id}`), { status: 'em_transito', coletaAt: Date.now() });
                       if (!isOnline) toggleTracking(true);
+                      ultimaPosRota.current = null;
                       calcRoute(entregaAtual, true);
                     }}
                   >
