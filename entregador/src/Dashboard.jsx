@@ -93,6 +93,78 @@ const PermissionRow = ({ icon, name, desc, status, onAction }) => (
   </div>
 );
 
+// Itens de saude agrupados por categoria (tela dedicada)
+const GRUPOS_SAUDE = [
+  { titulo: '📍 Localização', itens: [
+    { key: 'localizacao', icon: '📍', name: 'GPS / Localização', desc: 'Necessário para as rotas', acao: 'openLocationSettings' },
+    { key: 'localizacaoSempre', icon: '🌐', name: 'Permissão Sempre', desc: 'Localização em 2º plano', acao: 'openAppSettings' },
+  ]},
+  { titulo: '🔔 Alertas', itens: [
+    { key: 'notificacao', icon: '🔔', name: 'Notificações', desc: 'Alertas de novas entregas', acao: 'openNotificationSettings' },
+  ]},
+  { titulo: '⚙️ Sistema', itens: [
+    { key: 'bateria', icon: '🔋', name: 'Bateria', desc: 'Sem restrição em segundo plano', acao: 'requestIgnoreBatteryOptimization' },
+    { key: 'sobreposicao', icon: '📑', name: 'Sobreposição', desc: 'Popups sobre outros apps (essencial)', acao: 'openOverlaySettings' },
+    { key: 'acessibilidade', icon: '🛠️', name: 'Acessibilidade', desc: 'Blindagem do GPS', acao: 'openAccessibilitySettings' },
+  ]},
+];
+const TOTAL_SAUDE = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.length, 0);
+
+// Tela dedicada de Saude do Sistema (fullscreen, organizada em secoes)
+function TelaSaude({ permissoes, checkPerms, debugLog, onLimparLog, onClose }) {
+  const ok = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.filter(i => permissoes[i.key]).length, 0);
+  const tudoOk = ok === TOTAL_SAUDE;
+  return (
+    <div className="route-overlay">
+      <div className="route-header">
+        <button className="btn-back" onClick={onClose}>←</button>
+        <div style={{flex: 1}}><h2 style={{fontSize: '1rem', fontWeight: 800}}>Saúde do Sistema</h2></div>
+        <button onClick={checkPerms} style={{background: 'var(--primary)', color: 'white', border: 'none', padding: '7px 12px', borderRadius: '8px', fontWeight: 800, fontSize: '0.68rem', cursor: 'pointer'}}>ATUALIZAR</button>
+      </div>
+      <div className="saude-corpo">
+        <div className="saude-resumo" style={{background: tudoOk ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)', border: `1px solid ${tudoOk ? 'var(--success)' : '#f59e0b'}`}}>
+          <div className="saude-resumo-num" style={{color: tudoOk ? 'var(--success)' : '#f59e0b'}}>{ok}/{TOTAL_SAUDE}</div>
+          <div>
+            <div style={{fontWeight: 800, fontSize: '0.95rem'}}>{tudoOk ? 'Tudo pronto para trabalhar! ✅' : 'Ative os itens pendentes'}</div>
+            <div style={{fontSize: '0.72rem', color: 'var(--text-muted)'}}>
+              {tudoOk ? 'Rastreamento e alertas funcionando' : 'Toque em ATIVAR ao lado de cada item em vermelho'}
+            </div>
+          </div>
+        </div>
+        <div className="saude-barra">
+          <div className="saude-barra-fill" style={{width: `${(ok / TOTAL_SAUDE) * 100}%`, background: tudoOk ? 'var(--success)' : '#f59e0b'}} />
+        </div>
+
+        {GRUPOS_SAUDE.map(g => (
+          <div key={g.titulo} className="saude-secao">
+            <div className="saude-secao-titulo">{g.titulo}</div>
+            <div className="perm-list">
+              {g.itens.map(i => (
+                <PermissionRow key={i.key} icon={i.icon} name={i.name} desc={i.desc}
+                  status={permissoes[i.key]} onAction={() => AppSettings[i.acao]()} />
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <div className="saude-secao">
+          <div className="saude-secao-titulo" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+            <span>🧪 Diagnóstico (últimos eventos)</span>
+            {debugLog.length > 0 && (
+              <button onClick={onLimparLog} style={{background: 'none', border: 'none', color: 'var(--danger)', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.05em'}}>LIMPAR</button>
+            )}
+          </div>
+          <div className="saude-log">
+            {debugLog.length === 0
+              ? <div className="saude-log-vazio">Nenhum evento registrado. Tudo normal.</div>
+              : debugLog.map((l, i) => <div key={i} className="saude-log-item">{l}</div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actionColor }) => {
   const nomeEmpresa = entrega.empresaNome || empresas[entrega.empresaId]?.nome || 'Estabelecimento';
   const distParaColeta = useMemo(() => {
@@ -197,6 +269,9 @@ export default function Dashboard({ user }) {
     acessibilidade: false
   });
   const [debugLog, setDebugLog] = useState([]);
+  const [saudeAberta, setSaudeAberta] = useState(false);
+  const okSaude = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.filter(i => permissoes[i.key]).length, 0);
+  const tudoOkSaude = okSaude === TOTAL_SAUDE;
 
   const watchId = useRef(null);
   const onlineRef = useRef(false);
@@ -568,25 +643,15 @@ export default function Dashboard({ user }) {
           </div>
         </div>
 
-        <div className="widget-card">
-          <div className="widget-header">
-            <h2 className="widget-title">Saúde do Sistema</h2>
-            <button onClick={checkPerms} style={{background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.7rem', fontWeight: 700}}>ATUALIZAR</button>
-          </div>
-          <div className="perm-list">
-            <PermissionRow icon="📍" name="GPS / Localização" desc="Necessário para as rotas" status={permissoes.localizacao} onAction={AppSettings.openLocationSettings} />
-            <PermissionRow icon="🌐" name="Permissão Sempre" desc="Localização em 2º plano" status={permissoes.localizacaoSempre} onAction={AppSettings.openAppSettings} />
-            <PermissionRow icon="🔋" name="Bateria" desc="Sem restrição de fundo" status={permissoes.bateria} onAction={AppSettings.requestIgnoreBatteryOptimization} />
-            <PermissionRow icon="🔔" name="Notificações" desc="Alertas de entregas" status={permissoes.notificacao} onAction={AppSettings.openNotificationSettings} />
-            <PermissionRow icon="📑" name="Sobreposição" desc="Igual Uber/99 (Essencial)" status={permissoes.sobreposicao} onAction={AppSettings.openOverlaySettings} />
-            <PermissionRow icon="⚙️" name="Acessibilidade" desc="Blindagem de GPS" status={permissoes.acessibilidade} onAction={AppSettings.openAccessibilitySettings} />
-          </div>
-          {debugLog.length > 0 && (
-            <div className="log-container" style={{marginTop: 15}}>
-              {debugLog.map((l, i) => <div key={i} className="log-item">{l}</div>)}
-            </div>
-          )}
-        </div>
+        {/* Resumo compacto: abre a tela de Saude do Sistema */}
+        <button className="saude-chip" onClick={() => setSaudeAberta(true)}>
+          <span className="saude-chip-icon">{tudoOkSaude ? '✅' : '⚠️'}</span>
+          <span style={{flex: 1}}>
+            <span className="saude-chip-titulo">Saúde do Sistema: {okSaude}/{TOTAL_SAUDE} ativos</span>
+            <span className="saude-chip-sub">{tudoOkSaude ? 'Rastreamento e alertas OK' : 'Toque para revisar e ativar o que falta'}</span>
+          </span>
+          <span className="saude-chip-abrir">ABRIR ›</span>
+        </button>
 
         <div className="tabs-container">
           <button className={`tab-btn ${statusFiltro === 'disponivel' ? 'active' : ''}`} onClick={() => setStatusFiltro('disponivel')}>DISPONÍVEIS</button>
@@ -674,6 +739,17 @@ export default function Dashboard({ user }) {
           )}
         </div>
       </main>
+
+      {/* Tela dedicada de Saude do Sistema */}
+      {saudeAberta && (
+        <TelaSaude
+          permissoes={permissoes}
+          checkPerms={checkPerms}
+          debugLog={debugLog}
+          onLimparLog={() => setDebugLog([])}
+          onClose={() => setSaudeAberta(false)}
+        />
+      )}
 
       {entregaAtual && (
         <div className="route-overlay">

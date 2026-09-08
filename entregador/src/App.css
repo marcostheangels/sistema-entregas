@@ -218,6 +218,69 @@
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
+/* SAUDE DO SISTEMA: chip compacto + tela dedicada */
+.saude-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  transition: border-color 0.2s;
+}
+.saude-chip:active { border-color: var(--primary); }
+.saude-chip-icon { font-size: 1.5rem; }
+.saude-chip-titulo { display: block; font-weight: 800; font-size: 0.85rem; }
+.saude-chip-sub { display: block; font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+.saude-chip-abrir { color: var(--primary); font-weight: 800; font-size: 0.72rem; letter-spacing: 0.05em; }
+
+.saude-corpo { padding: 20px; overflow-y: auto; flex: 1; }
+.saude-resumo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  margin-bottom: 12px;
+}
+.saude-resumo-num { font-size: 2rem; font-weight: 900; line-height: 1; }
+.saude-barra {
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.saude-barra-fill { height: 100%; border-radius: 99px; transition: width 0.3s; }
+.saude-secao { margin-bottom: 22px; }
+.saude-secao-titulo {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.saude-log {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.saude-log-item { font-family: monospace; font-size: 0.68rem; color: var(--text-muted); }
+.saude-log-vazio { font-size: 0.72rem; color: var(--text-muted); font-style: italic; text-align: center; padding: 10px; }
+
 .widget-header {
   margin-bottom: 16px;
 }
