@@ -218,6 +218,62 @@
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
+/* MINI MAPA: localizacao ao vivo, estilo Uber/99 */
+.minimapa-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+.minimapa-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+.minimapa-titulo { font-size: 0.8rem; font-weight: 800; }
+.minimapa-status {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 99px;
+}
+.minimapa-status.on { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+.minimapa-status.off { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+.minimapa-expand {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--primary);
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.minimapa-mapa { height: 210px; position: relative; }
+.minimapa-aguardando {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* SAUDE DO SISTEMA: chip compacto + tela dedicada */
 .saude-chip {
   display: flex;

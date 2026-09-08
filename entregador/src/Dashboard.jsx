@@ -75,6 +75,56 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
   );
 };
 
+// Icone do entregador reutilizado nos mapas
+const iconEntregador = new L.Icon({
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+  iconSize: [45, 45], iconAnchor: [22, 45], popupAnchor: [0, -45]
+});
+
+// Mini mapa fixo no painel: localizacao atual do entregador, estilo Uber/99
+const MiniMapa = ({ posicao, online, onExpand }) => (
+  <div className="minimapa-wrap">
+    <div className="minimapa-header">
+      <span className="minimapa-titulo">📍 Minha localização</span>
+      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+        <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
+        <button className="minimapa-expand" onClick={onExpand} title="Abrir mapa em tela cheia">⛶</button>
+      </div>
+    </div>
+    <div className="minimapa-mapa">
+      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={false} attributionControl={false}>
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapUpdater position={posicao} />
+        {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconEntregador}><Popup>Você está aqui</Popup></Marker>}
+      </MapContainer>
+      {!posicao && <div className="minimapa-aguardando">Aguardando sinal do GPS...</div>}
+    </div>
+  </div>
+);
+
+// Mapa em tela cheia (botao ⛶ do mini mapa)
+const MapaCheio = ({ posicao, online, onClose }) => (
+  <div className="route-overlay">
+    <div className="route-header">
+      <button className="btn-back" onClick={onClose}>←</button>
+      <div style={{flex: 1}}><h2 style={{fontSize: '1rem', fontWeight: 800}}>Minha localização</h2></div>
+      <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
+    </div>
+    <div style={{flex: 1, position: 'relative'}}>
+      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={false}>
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapUpdater position={posicao} />
+        {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconEntregador}><Popup>Você está aqui</Popup></Marker>}
+      </MapContainer>
+      {posicao && (
+        <div style={{position: 'absolute', bottom: '16px', left: '50%', transform: 'translateX(-50%)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '99px', padding: '8px 18px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'}}>
+          📌 {posicao.lat.toFixed(5)}, {posicao.lng.toFixed(5)}
+        </div>
+      )}
+    </div>
+  </div>
+);
+
 // -- UI SUB-COMPONENTS --
 const PermissionRow = ({ icon, name, desc, status, onAction }) => (
   <div className={`perm-row ${!status ? 'missing' : ''}`}>
@@ -270,6 +320,7 @@ export default function Dashboard({ user }) {
   });
   const [debugLog, setDebugLog] = useState([]);
   const [saudeAberta, setSaudeAberta] = useState(false);
+  const [mapaCheio, setMapaCheio] = useState(false);
   const okSaude = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.filter(i => permissoes[i.key]).length, 0);
   const tudoOkSaude = okSaude === TOTAL_SAUDE;
 
@@ -643,6 +694,9 @@ export default function Dashboard({ user }) {
           </div>
         </div>
 
+        {/* Mapa ao vivo da minha localizacao, estilo Uber/99 */}
+        <MiniMapa posicao={posicao} online={isOnline} onExpand={() => setMapaCheio(true)} />
+
         {/* Resumo compacto: abre a tela de Saude do Sistema */}
         <button className="saude-chip" onClick={() => setSaudeAberta(true)}>
           <span className="saude-chip-icon">{tudoOkSaude ? '✅' : '⚠️'}</span>
@@ -739,6 +793,9 @@ export default function Dashboard({ user }) {
           )}
         </div>
       </main>
+
+      {/* Mapa em tela cheia */}
+      {mapaCheio && <MapaCheio posicao={posicao} online={isOnline} onClose={() => setMapaCheio(false)} />}
 
       {/* Tela dedicada de Saude do Sistema */}
       {saudeAberta && (
