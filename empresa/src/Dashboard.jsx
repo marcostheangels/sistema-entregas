@@ -64,7 +64,7 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
   );
 }
 
-function MensagemBox({ entregadorId, empresaId, empresaNome, entregas }) {
+function MensagemBox({ entregadorId, empresaId, empresaNome, entregas, posicoes }) {
   const [texto, setTexto] = useState('');
   const [enviada, setEnviada] = useState(false);
   const [erro, setErro] = useState('');
@@ -74,6 +74,7 @@ function MensagemBox({ entregadorId, empresaId, empresaNome, entregas }) {
   const enviar = async () => {
     const t = texto.trim();
     if (!t || !entregaAtiva) return;
+    if (!posicoes?.[entregadorId]?.online) { setErro('Entregador offline — aguarde ele voltar para enviar mensagens.'); return; }
     try {
       await push(ref(db, 'mensagens'), {
         empresaId, entregadorId, empresaNome, entregaId: entregaAtiva.id,
@@ -114,12 +115,13 @@ function MensagemBox({ entregadorId, empresaId, empresaNome, entregas }) {
 }
 
 // Chat flutuante: conversa com entregadores que estao em entrega ativa
-function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores }) {
+function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores, posicoes }) {
   const [aberto, setAberto] = useState(false);
   const [conversas, setConversas] = useState({}); // entregadorId -> [msgs ordenadas]
   const [ativo, setAtivo] = useState(null);
   const [texto, setTexto] = useState('');
   const [naoLidas, setNaoLidas] = useState({}); // entregadorId -> qtd nao lida
+  const [erro, setErro] = useState('');
   const contagemAnterior = useRef({});
   const fimRef = useRef(null);
 
@@ -163,10 +165,14 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores }) {
       });
       contagemAnterior.current = Object.fromEntries(Object.entries(porEntregador).map(([k, v]) => [k, v.length]));
       setConversas(porEntregador);
-      if (chegouResposta) {
-        tocarChimeResposta();
-        setNaoLidas(novasNaoLidas);
-      }
+      // Atualiza nao lidas e zera as de conversas que ficaram vazias (chat resetado apos entrega)
+      setNaoLidas(prev => {
+        const base = chegouResposta ? novasNaoLidas : prev;
+        const limpo = {};
+        Object.entries(base).forEach(([eid, n]) => { if ((porEntregador[eid] || []).length > 0) limpo[eid] = n; });
+        return limpo;
+      });
+      if (chegouResposta) tocarChimeResposta();
     });
   }, [empresaId, ativo, aberto, naoLidas]);
 
@@ -195,13 +201,16 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores }) {
     // Exige entrega ativa real com o entregador selecionado
     const entregaAtiva = entregas.find(e => e.entregadorId === ativo && ['aceite', 'em_transito'].includes(e.status));
     if (!entregaAtiva) return;
+    // Nao envia se o entregador estiver offline
+    if (!posicoes?.[ativo]?.online) { setErro('Entregador offline — aguarde ele voltar para enviar mensagens.'); return; }
     try {
       await push(ref(db, 'mensagens'), {
         empresaId, entregadorId: ativo, empresaNome, entregaId: entregaAtiva.id,
         texto: t.slice(0, 500), de: 'empresa', timestamp: Date.now()
       });
       setTexto('');
-    } catch { /* regra negou */ }
+      setErro('');
+    } catch { setErro('Erro ao enviar mensagem.'); }
   };
 
   const nomeAtivo = ativo ? (entregadores[ativo]?.nome || 'Entregador') : '';
@@ -244,7 +253,9 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores }) {
 
           {ativo && (
             <div className="chat-input-linha">
-              <input value={texto} onChange={e => setTexto(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviar(); }}
+              {erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#b45309', fontWeight:700, padding:'0 4px 4px'}}>{erro}</div>}
+              {!posicoes?.[ativo]?.online && !erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#b45309', fontWeight:700, padding:'0 4px 4px'}}>⚠️ Entregador offline — chat indisponível</div>}
+              <input value={texto} onChange={e => { setTexto(e.target.value); setErro(''); }} onKeyDown={e => { if (e.key === 'Enter') enviar(); }}
                 placeholder="Mensagem ao entregador..." maxLength={500} />
               <button onClick={enviar}>➤</button>
             </div>
@@ -316,7 +327,7 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
                   <button onClick={() => onBlockToggle(id, !isBloqueado)} style={{width: '100%', marginTop: '10px', padding: '8px', borderRadius: '5px', border: 'none', background: isBloqueado ? 'var(--success)' : '#334155', color: 'white', fontWeight: 700, cursor: 'pointer'}}>
                     {isBloqueado ? '✅ LIBERAR' : '🚫 BLOQUEAR'}
                   </button>
-                  <MensagemBox entregadorId={id} empresaId={currentUserId} empresaNome={empresaNome} entregas={entregas} />
+                  <MensagemBox entregadorId={id} empresaId={currentUserId} empresaNome={empresaNome} entregas={entregas} posicoes={posicoes} />
                 </div>
               </Popup>
             </Marker>
@@ -367,6 +378,30 @@ export default function Dashboard({ user }) {
     onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
     onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
   }, [user.uid]);
+
+  // Reseta o chat quando a entrega e concluida ('entregue') ou removida do banco
+  const statusAnteriorEntregas = useRef({});
+  useEffect(() => {
+    const atual = {};
+    entregas.forEach(e => { atual[e.id] = e.status; });
+    const anteriores = statusAnteriorEntregas.current;
+    const concluidas = [];
+    Object.entries(atual).forEach(([id, st]) => {
+      if (st === 'entregue' && anteriores[id] && anteriores[id] !== 'entregue') concluidas.push(id);
+    });
+    Object.keys(anteriores).forEach(id => {
+      if (!(id in atual) && anteriores[id] !== 'entregue') concluidas.push(id);
+    });
+    statusAnteriorEntregas.current = atual;
+    concluidas.forEach(async (entregaId) => {
+      try {
+        const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(entregaId)));
+        const updates = {};
+        snap.forEach(c => { updates[c.key] = null; });
+        if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
+      } catch { /* sem permissao */ }
+    });
+  }, [entregas]);
 
   const criarEntrega = async (e) => {
     e.preventDefault();
@@ -426,7 +461,7 @@ export default function Dashboard({ user }) {
         </div>
       </header>
 
-      <ChatFlutuante empresaId={user.uid} empresaNome={perfil?.nome || user.email} entregas={entregas} entregadores={entregadores} />
+      <ChatFlutuante empresaId={user.uid} empresaNome={perfil?.nome || user.email} entregas={entregas} entregadores={entregadores} posicoes={posicoes} />
 
       <div className="stats-grid">
         <div className={`stat-card clickable ${statusFiltro === 'pendente' ? 'active' : ''}`} onClick={() => setStatusFiltro('pendente')}>

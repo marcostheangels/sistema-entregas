@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push } from 'firebase/database';
+import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push, get } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
@@ -345,6 +345,34 @@ export default function Dashboard({ user }) {
     return () => { unsubPendentes(); unsubMinhas(); };
   }, [user.uid]);
 
+  // Reseta o chat quando uma entrega e concluida ('entregue') ou removida do banco
+  const statusAnteriorEntregas = useRef({});
+  useEffect(() => {
+    const atual = {};
+    entregas.forEach(e => { atual[e.id] = e.status; });
+    const anteriores = statusAnteriorEntregas.current;
+    const concluidas = [];
+    Object.entries(atual).forEach(([id, st]) => {
+      if (st === 'entregue' && anteriores[id] && anteriores[id] !== 'entregue') concluidas.push(id);
+    });
+    Object.keys(anteriores).forEach(id => {
+      if (!(id in atual) && anteriores[id] !== 'entregue') concluidas.push(id);
+    });
+    statusAnteriorEntregas.current = atual;
+    concluidas.forEach(async (entregaId) => {
+      try {
+        const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(entregaId)));
+        const updates = {};
+        snap.forEach(c => { updates[c.key] = null; });
+        if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
+      } catch { /* sem permissao */ }
+    });
+    // Fecha o popup de mensagem se a conversa da entrega concluida era a aberta
+    if (concluidas.length) {
+      setMensagemNova(prev => (prev && concluidas.includes(prev.entregaId)) ? null : prev);
+    }
+  }, [entregas]);
+
   // Keepalive Web: mantem o GPS atualizando mesmo com a aba/janela em segundo plano
   const startKeepalive = () => {
     try {
@@ -634,6 +662,9 @@ export default function Dashboard({ user }) {
                     await update(ref(db, `entregas/${entregaEmRota.id}`), { status: 'entregue', entregueEm: Date.now() });
                     setEntregaEmRota(null);
                     setRotaInfo(null);
+                    setMensagemNova(null);
+                    setResposta('');
+                    lastMsgTs.current = 0;
                   }}
                 >
                   FINALIZAR

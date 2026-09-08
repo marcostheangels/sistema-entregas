@@ -50,9 +50,9 @@
     "mensagens": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
-      ".indexOn": ["entregadorId", "empresaId"],
+      ".indexOn": ["entregadorId", "empresaId", "entregaId"],
       "$id": {
-        ".write": "auth != null && ((newData.child('de').val() === 'empresa' && newData.child('empresaId').val() === auth.uid) || (newData.child('de').val() === 'entregador' && newData.child('entregadorId').val() === auth.uid)) && root.child('entregas').child(newData.child('entregaId').val()).child('empresaId').val() === newData.child('empresaId').val() && root.child('entregas').child(newData.child('entregaId').val()).child('entregadorId').val() === newData.child('entregadorId').val() && (root.child('entregas').child(newData.child('entregaId').val()).child('status').val() === 'aceite' || root.child('entregas').child(newData.child('entregaId').val()).child('status').val() === 'em_transito')",
+        ".write": "auth != null && ((!newData.exists() && data.exists() && (data.child('empresaId').val() === auth.uid || data.child('entregadorId').val() === auth.uid) && (!root.child('entregas').child(data.child('entregaId').val()).exists() || root.child('entregas').child(data.child('entregaId').val()).child('status').val() === 'entregue')) || (((newData.child('de').val() === 'empresa' && newData.child('empresaId').val() === auth.uid) || (newData.child('de').val() === 'entregador' && newData.child('entregadorId').val() === auth.uid)) && root.child('entregas').child(newData.child('entregaId').val()).child('empresaId').val() === newData.child('empresaId').val() && root.child('entregas').child(newData.child('entregaId').val()).child('entregadorId').val() === newData.child('entregadorId').val() && (root.child('entregas').child(newData.child('entregaId').val()).child('status').val() === 'aceite' || root.child('entregas').child(newData.child('entregaId').val()).child('status').val() === 'em_transito') && root.child('posicoes').child(newData.child('entregadorId').val()).child('online').val() === true))",
         "empresaId": { ".validate": "newData.isString()" },
         "entregadorId": { ".validate": "newData.isString()" },
         "entregaId": { ".validate": "newData.isString()" },
