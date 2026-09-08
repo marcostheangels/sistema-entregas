@@ -1,0 +1,16 @@
+# IDE
+.idea/
+.vscode/
+
+# Dependências e builds
+node_modules/
+dist/
+www/
+
+# APKs (artefatos de build, não versionar)
+*.apk
+
+# Lixo
+]
+.DS_Store
+Thumbs.db

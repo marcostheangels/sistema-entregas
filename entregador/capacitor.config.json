@@ -1,0 +1,11 @@
+{
+  "appId": "com.entregas.entregador",
+  "appName": "App Entregador",
+  "webDir": "dist",
+  "plugins": {
+    "LocationService": {
+      "userId": ""
+    },
+    "AppSettingsPlugin": {}
+  }
+}

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Entregas</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      text-align: center;
+      padding: 40px;
+    }
+    h1 { font-size: 2.5rem; margin-bottom: 10px; }
+    h2 { font-size: 1.2rem; color: #94a3b8; margin-bottom: 40px; font-weight: 400; }
+    .apps {
+      display: flex;
+      gap: 30px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .app-card {
+      background: #1e293b;
+      padding: 40px;
+      border-radius: 16px;
+      width: 280px;
+      transition: transform 0.2s;
+    }
+    .app-card:hover { transform: translateY(-5px); }
+    .app-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+    }
+    .empresa .app-icon { background: #3b82f6; }
+    .entregador .app-icon { background: #22c55e; }
+    .app-card h3 { font-size: 1.5rem; margin-bottom: 10px; }
+    .app-card p { color: #94a3b8; margin-bottom: 25px; font-size: 0.9rem; }
+    .app-card a {
+      display: inline-block;
+      padding: 12px 30px;
+      background: #475569;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .empresa a:hover { background: #3b82f6; }
+    .entregador a:hover { background: #22c55e; }
+    .status {
+      margin-top: 50px;
+      padding: 20px;
+      background: #1e293b;
+      border-radius: 12px;
+      display: inline-block;
+    }
+    .status h4 { color: #f59e0b; margin-bottom: 10px; }
+    .status p { font-size: 0.85rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Sistema de Entregas</h1>
+    <h2>Gestão completa para empresas e entregadores</h2>
+
+    <div class="apps">
+      <div class="app-card empresa">
+        <div class="app-icon">🏢</div>
+        <h3>App Empresa</h3>
+        <p>Cadastre entregas, acompanhe entregadores em tempo real</p>
+        <a href="empresa/">Abrir Empresa</a>
+      </div>
+
+      <div class="app-card entregador">
+        <div class="app-icon">🚚</div>
+        <h3>App Entregador</h3>
+        <p>Aceite entregas, navegue com GPS e atualize status</p>
+        <a href="entregador/">Abrir Entregador</a>
+      </div>
+    </div>
+
+    <div class="status">
+      <h4>⚠️ Configuração Necessária</h4>
+      <p>Execute: <code>node update-firebase.js</code> com suas credenciais do Firebase</p>
+    </div>
+  </div>
+</body>
+</html>

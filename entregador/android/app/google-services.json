@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "365779423688",
+    "firebase_url": "https://entregadores-e-empresas-default-rtdb.firebaseio.com",
+    "project_id": "entregadores-e-empresas",
+    "storage_bucket": "entregadores-e-empresas.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:365779423688:web:a518b7fee5b849be3bb0fd",
+        "android_client_info": {
+          "package_name": "com.entregas.entregador"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDY7Ea1B6ofAHSmFyyXPnUp9SdebZbF1EU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
