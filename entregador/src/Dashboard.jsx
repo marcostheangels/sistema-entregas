@@ -547,13 +547,17 @@ export default function Dashboard({ user }) {
             <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: '4px' }}>{new Date(mensagemNova.timestamp).toLocaleTimeString('pt-BR')}</div>
             {respostaOk ? (
               <div style={{ marginTop: '10px', fontSize: '0.8rem', fontWeight: 800, color: '#0e9f6e' }}>Resposta enviada!</div>
-            ) : (
+            ) : entregas.some(e => e.empresaId === mensagemNova.empresaId && ['aceite', 'em_transito'].includes(e.status)) ? (
               <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                 <input value={resposta} onChange={e => setResposta(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviarResposta(); }}
                   placeholder="Responder à empresa..." maxLength={500}
                   style={{ flex: 1, padding: '8px 10px', borderRadius: '8px', border: '1px solid #c7d2fe', fontSize: '0.85rem', color: '#312e81', background: 'white' }} />
                 <button onClick={enviarResposta} style={{ background: '#6366f1', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem' }}>ENVIAR</button>
                 <button onClick={() => setMensagemNova(null)} style={{ background: 'transparent', color: '#6366f1', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem' }}>OK</button>
+              </div>
+            ) : (
+              <div style={{ marginTop: '10px', fontSize: '0.75rem', fontStyle: 'italic', opacity: 0.75 }}>
+                Responder disponível somente durante uma entrega ativa com esta empresa.
               </div>
             )}
           </div>

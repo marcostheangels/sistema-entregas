@@ -64,10 +64,12 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
   );
 }
 
-function MensagemBox({ entregadorId, empresaId, empresaNome }) {
+function MensagemBox({ entregadorId, empresaId, empresaNome, entregas }) {
   const [texto, setTexto] = useState('');
   const [enviada, setEnviada] = useState(false);
   const [erro, setErro] = useState('');
+  // Chat liberado somente com entrega ativa (aceite ou em_transito) entre esta empresa e o entregador
+  const temEntregaAtiva = entregas.some(e => e.entregadorId === entregadorId && ['aceite', 'em_transito'].includes(e.status));
 
   const enviar = async () => {
     const t = texto.trim();
@@ -86,8 +88,19 @@ function MensagemBox({ entregadorId, empresaId, empresaNome }) {
     }
   };
 
+  if (!temEntregaAtiva) {
+    return (
+      <div style={{marginTop:'10px', borderTop:'1px solid #eee', paddingTop:'8px', fontSize:'0.72rem', color:'var(--text-muted)', fontStyle:'italic'}}>
+        Chat disponível somente durante uma entrega ativa com este entregador.
+      </div>
+    );
+  }
+
   return (
     <div style={{marginTop:'10px', borderTop:'1px solid #eee', paddingTop:'8px'}}>
+      <div style={{fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--success)', marginBottom:'6px'}}>
+        Chat ativo (entrega em andamento)
+      </div>
       <div style={{display:'flex', gap:'5px'}}>
         <input value={texto} onChange={e=>setTexto(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') enviar(); }}
           placeholder="Mensagem ao entregador..." maxLength={500}
@@ -100,7 +113,7 @@ function MensagemBox({ entregadorId, empresaId, empresaNome }) {
   );
 }
 
-function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, onBlockToggle }) {
+function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entregas, onBlockToggle }) {
   const mapRef = useRef(null);
   const centerMoc = [-16.7251, -43.8647];
   const [, setTick] = useState(0);
@@ -156,7 +169,7 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, onBlock
                   <button onClick={() => onBlockToggle(id, !isBloqueado)} style={{width: '100%', marginTop: '10px', padding: '8px', borderRadius: '5px', border: 'none', background: isBloqueado ? 'var(--success)' : '#334155', color: 'white', fontWeight: 700, cursor: 'pointer'}}>
                     {isBloqueado ? '✅ LIBERAR' : '🚫 BLOQUEAR'}
                   </button>
-                  <MensagemBox entregadorId={id} empresaId={currentUserId} empresaNome={empresaNome} />
+                  <MensagemBox entregadorId={id} empresaId={currentUserId} empresaNome={empresaNome} entregas={entregas} />
                 </div>
               </Popup>
             </Marker>
@@ -319,7 +332,7 @@ export default function Dashboard({ user }) {
 
       <div className="main-content">
         <div className="column-left">
-          <MapaFrota entregadores={entregadores} posicoes={posicoes} currentUserId={user.uid} empresaNome={perfil?.nome || user.email} onBlockToggle={toggleBloqueio} />
+          <MapaFrota entregadores={entregadores} posicoes={posicoes} currentUserId={user.uid} empresaNome={perfil?.nome || user.email} entregas={entregas} onBlockToggle={toggleBloqueio} />
 
           <div className="section-title">
             <span>📦</span> Listagem de Pedidos ({statusFiltro.toUpperCase()})
