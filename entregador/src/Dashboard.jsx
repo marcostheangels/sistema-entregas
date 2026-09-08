@@ -318,9 +318,13 @@ function ChatFlutuanteEnt({ uid, entregas, online, oculto }) {
     return [...ids];
   }, [entregas]);
 
-  const nomeEmpresa = (id) =>
-    entregas.find(e => e.empresaId === id)?.empresaNome ||
-    conversas[id]?.[conversas[id].length - 1]?.empresaNome || 'Empresa';
+  const nomeEmpresa = (id) => {
+    const candidatos = [
+      entregas.find(e => e.empresaId === id)?.empresaNome,
+      conversas[id]?.[conversas[id].length - 1]?.empresaNome
+    ].filter(Boolean);
+    return candidatos.find(n => !n.includes('@')) || candidatos[0] || 'Empresa';
+  };
 
   // Escuta todas as mensagens deste entregador e organiza por empresa
   useEffect(() => {
@@ -561,7 +565,9 @@ function TelaSaude({ permissoes, checkPerms, debugLog, onLimparLog, onClose }) {
 }
 
 const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actionColor }) => {
-  const nomeEmpresa = entrega.empresaNome || empresas[entrega.empresaId]?.nome || 'Estabelecimento';
+  // Nome do estabelecimento: nunca mostra e-mail se houver nome real
+  const candidatosNome = [entrega.empresaNome, empresas[entrega.empresaId]?.nome].filter(Boolean);
+  const nomeEmpresa = candidatosNome.find(n => !n.includes('@')) || candidatosNome[0] || 'Estabelecimento';
   const distParaColeta = useMemo(() => {
     if (!posicao || !entrega.origemCoords) return null;
     return haversineKm(posicao, entrega.origemCoords);

@@ -539,6 +539,15 @@ export default function Dashboard({ user }) {
     return () => { unsubPerfil(); unsubEntregas(); unsubEntregadores(); unsubPosicoes(); };
   }, [user.uid]);
 
+  // Registros antigos podem ter ficado sem nome: completa a partir da aprovacao
+  useEffect(() => {
+    if (!perfil || perfil.nome) return;
+    get(ref(db, `aprovacoes/${user.uid}`)).then(s => {
+      const nome = s.val()?.nome;
+      if (nome) update(ref(db, `empresas/${user.uid}`), { nome }).catch(() => {});
+    }).catch(() => {});
+  }, [perfil, user.uid]);
+
   // Reseta o chat quando a entrega e concluida ('entregue') ou removida do banco
   const statusAnteriorEntregas = useRef({});
   useEffect(() => {
