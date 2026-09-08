@@ -55,7 +55,7 @@ echo     SERVIDOR ATIVO EM: http://localhost:5173
 echo     PARA ENCERRAR O SISTEMA, FECHE ESTA JANELA.
 echo  ==========================================================================================
 echo.
-npm run dev
+npm run dev -- --host
 pause
 goto menu
 

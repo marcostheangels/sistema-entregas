@@ -41,5 +41,5 @@ start http://localhost:5174
 
 echo.
 echo [!] Iniciando servidor de desenvolvimento...
-npm run dev -- --port 5174
+npm run dev -- --port 5174 --host
 pause

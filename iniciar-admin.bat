@@ -6,5 +6,5 @@ if not exist node_modules (
     call npm install
 )
 start "" http://localhost:5175
-call npm run dev -- --port 5175 --strictPort
+call npm run dev -- --port 5175 --strictPort --host
 pause

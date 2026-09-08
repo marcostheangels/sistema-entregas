@@ -10,13 +10,13 @@ echo [+] Otimizando ambiente e preparando servidores...
 echo.
 
 echo [1/3] Iniciando Painel da Empresa (Porta 5173)...
-start cmd /k "cd /d %~dp0empresa && title SERVIDOR EMPRESA && npm run dev"
+start cmd /k "cd /d %~dp0empresa && title SERVIDOR EMPRESA && npm run dev -- --host"
 
 echo [2/3] Iniciando App do Entregador (Porta 5174)...
-start cmd /k "cd /d %~dp0entregador && title SERVIDOR ENTREGADOR && npm run dev -- --port 5174"
+start cmd /k "cd /d %~dp0entregador && title SERVIDOR ENTREGADOR && npm run dev -- --port 5174 --host"
 
 echo [3/3] Iniciando Painel Administrativo (Porta 5175)...
-start cmd /k "cd /d %~dp0admin && title SERVIDOR ADMIN && npm run dev -- --port 5175"
+start cmd /k "cd /d %~dp0admin && title SERVIDOR ADMIN && npm run dev -- --port 5175 --host"
 
 echo.
 echo [+] Todos os sistemas estao subindo!
