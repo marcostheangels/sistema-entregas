@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { ref, push, set, onValue, update, remove, get, query, orderByChild, equalTo } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -291,10 +291,62 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores, posicoe
   );
 }
 
+// Marcador estilo Uber: circulo colorido com emoji (coleta e destino)
+const iconeEmojiEmp = (emoji, cor) => L.divIcon({
+  html: `<div style="width:34px;height:34px;border-radius:50%;background:${cor};display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 8px rgba(0,0,0,0.35);border:2.5px solid white;">${emoji}</div>`,
+  className: '', iconSize: [34, 34], iconAnchor: [17, 17]
+});
+const iconeColetaEmp = iconeEmojiEmp('🏢', '#f59e0b');
+const iconeDestinoEmp = iconeEmojiEmp('🏠', '#10b981');
+
+const haversineKmEmp = (a, b) => {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lng - a.lng) * Math.PI / 180;
+  const h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
 function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entregas, onBlockToggle }) {
   const mapRef = useRef(null);
   const centerMoc = [-16.7251, -43.8647];
   const [, setTick] = useState(0);
+  const [rota, setRota] = useState(null); // { chave, coords }
+  const ultimaRotaPos = useRef(null);
+
+  // Entrega em andamento desta empresa (prioriza quem ja esta levando o pedido)
+  const entregaRota = entregas.find(e => e.status === 'em_transito') || entregas.find(e => e.status === 'aceite');
+
+  // Rota real (OSRM) da entrega em andamento: entregador -> coleta -> destino,
+  // recalculada quando o entregador anda mais de 400 m
+  useEffect(() => {
+    const e = entregaRota;
+    if (!e?.origemCoords || !e?.destinoCoords) { setRota(null); return; }
+    const chave = `${e.id}-${e.status}`;
+    const pos = posicoes[e.entregadorId];
+    const p = pos && pos.online && Date.now() - (pos.timestamp || 0) < 120000 ? { lat: pos.lat, lng: pos.lng } : null;
+    const buscar = (wps) => {
+      fetch(`https://router.project-osrm.org/route/v1/driving/${wps}?overview=full&geometries=geojson`)
+        .then(r => r.json())
+        .then(d => { if (d.routes?.[0]) setRota({ chave, coords: d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]) }); })
+        .catch(() => {});
+    };
+    if (!p) {
+      ultimaRotaPos.current = null;
+      if (rota?.chave !== chave) {
+        buscar(`${e.origemCoords.lng},${e.origemCoords.lat};${e.destinoCoords.lng},${e.destinoCoords.lat}`);
+      }
+      return;
+    }
+    if (rota?.chave === chave && ultimaRotaPos.current && haversineKmEmp(ultimaRotaPos.current, p) <= 0.4) return;
+    ultimaRotaPos.current = p;
+    const wps = e.status === 'aceite'
+      ? `${p.lng},${p.lat};${e.origemCoords.lng},${e.origemCoords.lat};${e.destinoCoords.lng},${e.destinoCoords.lat}`
+      : `${p.lng},${p.lat};${e.destinoCoords.lng},${e.destinoCoords.lat}`;
+    buscar(wps);
+  }, [entregaRota, posicoes, rota?.chave]);
 
   // Reavalia o "sem sinal" periodicamente, mesmo sem mudanca nos dados
   useEffect(() => {
@@ -325,6 +377,10 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
       </div>
       <MapContainer center={centerMoc} zoom={13} style={{ height: '400px', width: '100%' }} ref={mapRef}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        {/* Rota da entrega em andamento + pontos de coleta e destino */}
+        {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup>Ponto de coleta</Popup></Marker>}
+        {entregaRota?.destinoCoords && <Marker position={[entregaRota.destinoCoords.lat, entregaRota.destinoCoords.lng]} icon={iconeDestinoEmp}><Popup>Destino da entrega</Popup></Marker>}
+        {rota?.coords && <Polyline positions={rota.coords} pathOptions={{ color: '#6366f1', weight: 5, opacity: 0.8 }} />}
         {Object.entries(posicoes).map(([id, pos]) => {
           if (id === currentUserId) return null;
           const info = entregadores[id] || {};
