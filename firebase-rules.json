@@ -2,6 +2,7 @@
   "rules": {
     "empresas": {
       ".read": "auth != null",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && (auth.uid === $uid || root.child('admin').child(auth.uid).val() === true)"
@@ -9,6 +10,7 @@
     },
     "entregadores": {
       ".read": "auth != null",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && (auth.uid === $uid || root.child('admin').child(auth.uid).val() === true)",
@@ -25,6 +27,7 @@
     },
     "entregas": {
       ".read": "auth != null",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       ".indexOn": ["empresaId", "status", "entregadorId"],
       "$id": {
         ".write": "auth != null && ((!data.exists() && newData.child('empresaId').val() === auth.uid && root.child('empresas').child(auth.uid).exists() && (!root.child('aprovacoes').child(auth.uid).exists() || root.child('aprovacoes').child(auth.uid).child('aprovado').val() === true)) || (data.exists() && data.child('empresaId').val() === auth.uid) || (data.exists() && data.child('entregadorId').val() === auth.uid) || (data.exists() && data.child('status').val() === 'pendente' && newData.child('entregadorId').val() === auth.uid))"
@@ -32,6 +35,7 @@
     },
     "posicoes": {
       ".read": "auth != null",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       "$uid": {
         ".read": "auth != null",
         ".write": true,
@@ -45,6 +49,7 @@
     },
     "mensagens": {
       ".read": "auth != null",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       ".indexOn": ["entregadorId", "empresaId"],
       "$id": {
         ".write": "auth != null && (newData.child('empresaId').val() === auth.uid || newData.child('entregadorId').val() === auth.uid)",
