@@ -184,6 +184,23 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores, posicoe
     }
   }, [aberto, ativos, conversas, ativo]);
 
+  // Encerra a conversa selecionada quando a entrega termina (sem entrega ativa e sem mensagens)
+  useEffect(() => {
+    if (ativo && !ativos.includes(ativo) && (conversas[ativo] || []).length === 0) {
+      setAtivo(null);
+      setTexto('');
+      setErro('');
+    }
+  }, [ativos, conversas, ativo]);
+
+  // Fecha o painel quando nao ha mais entrega ativa nem historico (chat resetado)
+  useEffect(() => {
+    if (aberto && ativos.length === 0 && Object.keys(conversas).length === 0) {
+      setAberto(false);
+      setAtivo(null);
+    }
+  }, [aberto, ativos, conversas]);
+
   // Limpa nao lidas do entregador selecionado quando o chat abre
   useEffect(() => {
     if (aberto && ativo) setNaoLidas(n => ({ ...n, [ativo]: 0 }));
@@ -251,7 +268,7 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores, posicoe
             <div ref={fimRef} />
           </div>
 
-          {ativo && (
+          {ativo && ativos.includes(ativo) && (
             <div className="chat-input-linha">
               {erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#b45309', fontWeight:700, padding:'0 4px 4px'}}>{erro}</div>}
               {!posicoes?.[ativo]?.online && !erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#b45309', fontWeight:700, padding:'0 4px 4px'}}>⚠️ Entregador offline — chat indisponível</div>}
@@ -259,6 +276,9 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores, posicoe
                 placeholder="Mensagem ao entregador..." maxLength={500} />
               <button onClick={enviar}>➤</button>
             </div>
+          )}
+          {ativo && !ativos.includes(ativo) && (
+            <div className="chat-vazio" style={{padding: '12px 20px', fontSize: '0.75rem'}}>✅ Entrega concluída — chat encerrado</div>
           )}
         </div>
       )}

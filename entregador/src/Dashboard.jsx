@@ -125,6 +125,170 @@ const MapaCheio = ({ posicao, online, onClose }) => (
   </div>
 );
 
+// Chat flutuante do entregador: conversa com as empresas em entrega ativa (igual ao da empresa)
+function ChatFlutuanteEnt({ uid, entregas, online, oculto }) {
+  const [aberto, setAberto] = useState(false);
+  const [conversas, setConversas] = useState({}); // empresaId -> [msgs ordenadas]
+  const [ativo, setAtivo] = useState(null);
+  const [texto, setTexto] = useState('');
+  const [naoLidas, setNaoLidas] = useState({});
+  const [erro, setErro] = useState('');
+  const contagemAnterior = useRef({});
+  const fimRef = useRef(null);
+
+  // Empresas com entrega ativa (aceite/em_transito)
+  const ativos = useMemo(() => {
+    const ids = new Set(
+      entregas.filter(e => ['aceite', 'em_transito'].includes(e.status) && e.empresaId).map(e => e.empresaId)
+    );
+    return [...ids];
+  }, [entregas]);
+
+  const nomeEmpresa = (id) =>
+    entregas.find(e => e.empresaId === id)?.empresaNome ||
+    conversas[id]?.[conversas[id].length - 1]?.empresaNome || 'Empresa';
+
+  // Escuta todas as mensagens deste entregador e organiza por empresa
+  useEffect(() => {
+    if (!uid) return;
+    const q = query(ref(db, 'mensagens'), orderByChild('entregadorId'), equalTo(uid));
+    return onValue(q, snap => {
+      const porEmpresa = {};
+      snap.forEach(c => {
+        const m = { id: c.key, ...c.val() };
+        if (!m.empresaId) return;
+        if (!porEmpresa[m.empresaId]) porEmpresa[m.empresaId] = [];
+        porEmpresa[m.empresaId].push(m);
+      });
+      Object.values(porEmpresa).forEach(list => list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)));
+
+      const anterior = contagemAnterior.current;
+      let chegouNova = false;
+      const novas = {};
+      Object.entries(porEmpresa).forEach(([eid, list]) => {
+        const diff = list.length - (anterior[eid] || 0);
+        if (diff > 0 && list[list.length - 1].de === 'empresa') {
+          chegouNova = true;
+          novas[eid] = diff;
+        }
+      });
+      contagemAnterior.current = Object.fromEntries(Object.entries(porEmpresa).map(([k, v]) => [k, v.length]));
+      setConversas(porEmpresa);
+      setNaoLidas(prev => {
+        const base = { ...prev };
+        if (chegouNova) Object.entries(novas).forEach(([eid, n]) => { base[eid] = (base[eid] || 0) + n; });
+        const limpo = {};
+        Object.entries(base).forEach(([eid, n]) => { if ((porEmpresa[eid] || []).length > 0) limpo[eid] = n; });
+        return limpo;
+      });
+    });
+  }, [uid]);
+
+  // Encerra a conversa selecionada quando a entrega termina
+  useEffect(() => {
+    if (ativo && !ativos.includes(ativo) && (conversas[ativo] || []).length === 0) {
+      setAtivo(null);
+      setTexto('');
+      setErro('');
+    }
+  }, [ativos, conversas, ativo]);
+
+  // Fecha o painel quando nao ha mais entrega ativa nem historico
+  useEffect(() => {
+    if (aberto && ativos.length === 0 && Object.keys(conversas).length === 0) {
+      setAberto(false);
+      setAtivo(null);
+    }
+  }, [aberto, ativos, conversas]);
+
+  useEffect(() => {
+    if (aberto && ativo) setNaoLidas(n => ({ ...n, [ativo]: 0 }));
+  }, [aberto, ativo, conversas]);
+
+  useEffect(() => {
+    if (aberto && fimRef.current) fimRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [aberto, ativo, conversas]);
+
+  const totalNaoLidas = Object.values(naoLidas).reduce((s, n) => s + n, 0);
+
+  const enviar = async () => {
+    const t = texto.trim();
+    if (!t || !ativo) return;
+    const entregaAtiva = entregas.find(e => e.empresaId === ativo && ['aceite', 'em_transito'].includes(e.status));
+    if (!entregaAtiva) return;
+    if (!online) { setErro('Você está offline — fique online para enviar mensagens.'); return; }
+    try {
+      await push(ref(db, 'mensagens'), {
+        empresaId: ativo, entregadorId: uid, empresaNome: nomeEmpresa(ativo),
+        entregaId: entregaAtiva.id, texto: t.slice(0, 500), de: 'entregador', timestamp: Date.now()
+      });
+      setTexto('');
+      setErro('');
+    } catch { setErro('Erro ao enviar mensagem.'); }
+  };
+
+  // Oculto durante navegacao/telas fullscreen (os hooks continuam ativos)
+  if (oculto) return null;
+
+  const msgsAtivas = ativo ? (conversas[ativo] || []) : [];
+
+  return (
+    <div className="chat-flutuante">
+      {aberto && (
+        <div className="chat-painel">
+          <div className="chat-header">
+            <div>
+              <div className="chat-titulo">💬 Chat com a Empresa</div>
+              <div className="chat-subtitulo">{ativo ? nomeEmpresa(ativo) : 'Nenhuma entrega ativa'}</div>
+            </div>
+            <button className="chat-fechar" onClick={() => setAberto(false)}>✕</button>
+          </div>
+
+          {ativos.length > 1 && (
+            <div className="chat-abas">
+              {ativos.map(id => (
+                <button key={id} className={`chat-aba ${id === ativo ? 'ativa' : ''}`} onClick={() => { setAtivo(id); setErro(''); }}>
+                  {nomeEmpresa(id).split(' ')[0]}
+                  {naoLidas[id] > 0 && <span className="chat-badge-aba">{naoLidas[id]}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="chat-mensagens">
+            {!ativo && <div className="chat-vazio">O chat fica disponível durante uma entrega ativa (aceite ou em rota).</div>}
+            {ativo && msgsAtivas.length === 0 && <div className="chat-vazio">Nenhuma mensagem ainda. Diga algo à empresa!</div>}
+            {msgsAtivas.map(m => (
+              <div key={m.id} className={`chat-msg ${m.de === 'entregador' ? 'minha' : 'dele'}`}>
+                <div className="chat-bolha">{m.texto}</div>
+                <div className="chat-hora">{m.timestamp ? new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+              </div>
+            ))}
+            <div ref={fimRef} />
+          </div>
+
+          {ativo && ativos.includes(ativo) && (
+            <div className="chat-input-linha">
+              {erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#fbbf24', fontWeight:700, padding:'0 4px 4px'}}>{erro}</div>}
+              <input value={texto} onChange={e => { setTexto(e.target.value); setErro(''); }} onKeyDown={e => { if (e.key === 'Enter') enviar(); }}
+                placeholder="Mensagem para a empresa..." maxLength={500} />
+              <button onClick={enviar}>➤</button>
+            </div>
+          )}
+          {ativo && !ativos.includes(ativo) && (
+            <div className="chat-vazio" style={{padding: '12px 20px', fontSize: '0.75rem'}}>✅ Entrega concluída — chat encerrado</div>
+          )}
+        </div>
+      )}
+
+      <button className="chat-fab" onClick={() => setAberto(a => !a)} title="Chat com as empresas">
+        {aberto ? '✕' : '💬'}
+        {!aberto && totalNaoLidas > 0 && <span className="chat-badge">{totalNaoLidas}</span>}
+      </button>
+    </div>
+  );
+}
+
 // -- UI SUB-COMPONENTS --
 const PermissionRow = ({ icon, name, desc, status, onAction }) => (
   <div className={`perm-row ${!status ? 'missing' : ''}`}>
@@ -793,6 +957,9 @@ export default function Dashboard({ user }) {
           )}
         </div>
       </main>
+
+      {/* Chat flutuante com as empresas (igual ao do painel da empresa) */}
+      <ChatFlutuanteEnt uid={user.uid} entregas={entregas} online={isOnline} oculto={!!entregaAtual || saudeAberta || mapaCheio} />
 
       {/* Mapa em tela cheia */}
       {mapaCheio && <MapaCheio posicao={posicao} online={isOnline} onClose={() => setMapaCheio(false)} />}
