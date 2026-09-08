@@ -983,13 +983,25 @@ export default function Dashboard({ user }) {
     }
   };
 
+  // Ocupacao: estou com entrega ativa? Existem outros entregadores livres online?
+  const ocupadosIds = new Set(entregas.filter(e => e.status === 'aceite' || e.status === 'em_transito').map(e => e.entregadorId).filter(Boolean));
+  const souOcupadoAgora = ocupadosIds.has(user.uid);
+  const livresOnlineAgora = Object.entries(posicoesRef.current).filter(([id, p]) =>
+    id !== user.uid && p.online && Date.now() - (p.timestamp || 0) < 120000 && !ocupadosIds.has(id)
+  ).length;
+
   const filtered = entregas.filter(e => {
     if (isBlockedGlobal && statusFiltro === 'disponivel') return false;
 
     // Filtro por Empresa Bloqueada
     if (statusFiltro === 'disponivel' && empresasBloqueadas[e.empresaId]) return false;
 
-    if (statusFiltro === 'disponivel') return e.status === 'pendente';
+    if (statusFiltro === 'disponivel') {
+      if (e.status !== 'pendente') return false;
+      // Ocupado so enxerga novas ofertas quando TODOS os online estiverem ocupados
+      if (souOcupadoAgora && livresOnlineAgora > 0) return false;
+      return true;
+    }
     if (statusFiltro === 'minhas') return e.entregadorId === user.uid && (e.status === 'aceite' || e.status === 'em_transito');
     return e.entregadorId === user.uid && e.status === 'entregue';
   });
