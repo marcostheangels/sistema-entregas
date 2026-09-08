@@ -60,9 +60,14 @@ export default function Auth({ onAuth }) {
           createdAt: Date.now()
         });
 
-        // Solicitação de aprovação para o administrador
+        // Solicitação de aprovação para o administrador (com todos os dados do cadastro)
         await set(ref(db, `aprovacoes/${cred.user.uid}`), {
           tipo: 'entregador', nome, email,
+          telefone: telefone.replace(/\D/g, ''),
+          cpf: cpf.replace(/\D/g, ''),
+          veiculo,
+          placa: placa.toUpperCase(),
+          endereco,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
         });
 

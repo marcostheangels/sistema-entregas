@@ -77,7 +77,40 @@ function PainelAprovacoes({ user }) {
   const aprovadas = lista.filter(s => s.aprovado);
   const visivel = aba === 'pendentes' ? pendentes : aprovadas;
 
-  const aprovar = (id) => update(ref(db, `aprovacoes/${id}`), { aprovado: true, aprovadoEm: Date.now() });
+  const aprovar = async (id) => {
+    const s = lista.find(x => x.id === id);
+    await update(ref(db, `aprovacoes/${id}`), { aprovado: true, aprovadoEm: Date.now() });
+    // Cria/atualiza o perfil do aprovado automaticamente com os dados do cadastro
+    try {
+      if (s?.tipo === 'entregador') {
+        const snap = await get(ref(db, `entregadores/${id}`));
+        const p = snap.val() || {};
+        await update(ref(db, `entregadores/${id}`), {
+          nome: s.nome || p.nome || '',
+          email: s.email || p.email || '',
+          telefone: s.telefone || p.telefone || '',
+          cpf: s.cpf || p.cpf || '',
+          veiculo: s.veiculo || p.veiculo || '',
+          placa: s.placa || p.placa || '',
+          endereco: s.endereco || p.endereco || '',
+          status: p.status || 'disponivel',
+          createdAt: p.createdAt || Date.now()
+        });
+      } else if (s?.tipo === 'empresa') {
+        const snap = await get(ref(db, `empresas/${id}`));
+        const p = snap.val() || {};
+        await update(ref(db, `empresas/${id}`), {
+          nome: s.nome || p.nome || '',
+          email: s.email || p.email || '',
+          telefone: s.telefone || p.telefone || '',
+          endereco: s.endereco || p.endereco || '',
+          createdAt: p.createdAt || Date.now()
+        });
+      }
+    } catch (e) {
+      window.alert('Aprovado, mas houve erro ao sincronizar o perfil: ' + e.message);
+    }
+  };
   const revogar = (id) => update(ref(db, `aprovacoes/${id}`), { aprovado: false, aprovadoEm: null });
   const excluir = (id) => { if (window.confirm('Excluir esta solicitação? O cadastro ficará bloqueado até nova solicitação.')) remove(ref(db, `aprovacoes/${id}`)); };
 

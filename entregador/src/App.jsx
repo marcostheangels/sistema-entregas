@@ -36,11 +36,11 @@ function AguardandoAprovacao({ user }) {
 // Recupera o perfil do entregador caso ele tenha sido apagado (ex.: reset do administrador)
 function CompletarCadastro({ user, dados }) {
   const [nome, setNome] = useState(dados?.nome || '');
-  const [telefone, setTelefone] = useState('');
-  const [cpf, setCpf] = useState('');
-  const [veiculo, setVeiculo] = useState('');
-  const [placa, setPlaca] = useState('');
-  const [endereco, setEndereco] = useState('');
+  const [telefone, setTelefone] = useState(dados?.telefone || '');
+  const [cpf, setCpf] = useState(dados?.cpf || '');
+  const [veiculo, setVeiculo] = useState(dados?.veiculo || '');
+  const [placa, setPlaca] = useState(dados?.placa || '');
+  const [endereco, setEndereco] = useState(dados?.endereco || '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 

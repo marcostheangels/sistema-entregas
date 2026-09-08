@@ -45,6 +45,8 @@ function Login({ onAuth }) {
         });
         await set(ref(db, `aprovacoes/${cred.user.uid}`), {
           tipo: 'empresa', nome: nome.trim(), email,
+          telefone: telefone.replace(/\D/g, ''),
+          endereco,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
         });
         onAuth(cred.user);
