@@ -109,11 +109,16 @@ function App() {
       // Escuta o registro de aprovacao; se nao existir (cadastro antigo/resetado), cria a solicitacao
       unsubAprov = onValue(ref(db, `aprovacoes/${u.uid}`), s => {
         if (!s.exists()) {
-          get(ref(db, `empresas/${u.uid}`)).then(perf => {
-            return set(ref(db, `aprovacoes/${u.uid}`), {
-              tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
-              aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
-            });
+          // Nao cria solicitacao para a conta de administrador
+          get(ref(db, `admin/${u.uid}`)).then(adm => {
+            if (adm.val() !== true) {
+              return get(ref(db, `empresas/${u.uid}`)).then(perf => {
+                return set(ref(db, `aprovacoes/${u.uid}`), {
+                  tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
+                  aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
+                });
+              });
+            }
           }).catch(() => {});
           setAprovado(false);
         } else {
