@@ -25,14 +25,19 @@
       ".read": "auth != null",
       ".indexOn": ["empresaId", "status", "entregadorId"],
       "$id": {
-        ".write": "auth != null && ((!data.exists() && newData.child('empresaId').val() === auth.uid) || (data.exists() && data.child('empresaId').val() === auth.uid) || (data.exists() && data.child('entregadorId').val() === auth.uid) || (data.exists() && data.child('status').val() === 'pendente' && newData.child('entregadorId').val() === auth.uid))"
+        ".write": "auth != null && ((!data.exists() && newData.child('empresaId').val() === auth.uid && root.child('empresas').child(auth.uid).exists()) || (data.exists() && data.child('empresaId').val() === auth.uid) || (data.exists() && data.child('entregadorId').val() === auth.uid) || (data.exists() && data.child('status').val() === 'pendente' && newData.child('entregadorId').val() === auth.uid))"
       }
     },
     "posicoes": {
       "$uid": {
         ".read": "auth != null",
         ".write": true,
-        ".validate": "newData.hasChildren(['lat', 'lng', 'timestamp', 'online']) && newData.child('lat').val() is number && newData.child('lng').val() is number && newData.child('timestamp').val() is number && newData.child('online').val() is boolean"
+        "lat": { ".validate": "newData.isNumber()" },
+        "lng": { ".validate": "newData.isNumber()" },
+        "timestamp": { ".validate": "newData.isNumber()" },
+        "online": { ".validate": "newData.isBoolean()" },
+        "source": { ".validate": true },
+        "$other": { ".validate": false }
       }
     }
   }
