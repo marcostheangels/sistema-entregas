@@ -62,7 +62,8 @@ function LoginScreen({ adminExists }) {
 
 function PainelAprovacoes({ user }) {
   const [solicitacoes, setSolicitacoes] = useState(null);
-  const [aba, setAba] = useState('pendentes');
+  const [grupo, setGrupo] = useState('entregadores'); // 'entregadores' | 'empresas'
+  const [aba, setAba] = useState('pendentes'); // 'pendentes' | 'aprovados'
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'aprovacoes'), snap => setSolicitacoes(snap.val() || {}));
@@ -73,9 +74,14 @@ function PainelAprovacoes({ user }) {
     .map(([id, val]) => ({ id, ...val }))
     .sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
 
-  const pendentes = lista.filter(s => !s.aprovado);
-  const aprovadas = lista.filter(s => s.aprovado);
+  const doGrupo = lista.filter(s => (s.tipo === 'empresa') === (grupo === 'empresas'));
+  const pendentes = doGrupo.filter(s => !s.aprovado);
+  const aprovadas = doGrupo.filter(s => s.aprovado);
   const visivel = aba === 'pendentes' ? pendentes : aprovadas;
+  const totalGrupo = {
+    entregadores: lista.filter(s => s.tipo === 'entregador').length,
+    empresas: lista.filter(s => s.tipo === 'empresa').length
+  };
 
   const aprovar = async (id) => {
     const s = lista.find(x => x.id === id);
@@ -183,12 +189,23 @@ function PainelAprovacoes({ user }) {
         <button className="admin-btn-sair" onClick={() => signOut(auth)}>SAIR</button>
       </header>
 
+      <div className="admin-stats admin-grupos">
+        <button className={`admin-stat admin-grupo ${grupo === 'entregadores' ? 'active' : ''}`} onClick={() => setGrupo('entregadores')}>
+          <h3>🛵 ENTREGADORES</h3>
+          <p>{totalGrupo.entregadores}</p>
+        </button>
+        <button className={`admin-stat admin-grupo ${grupo === 'empresas' ? 'active' : ''}`} onClick={() => setGrupo('empresas')}>
+          <h3>🏢 EMPRESAS</h3>
+          <p>{totalGrupo.empresas}</p>
+        </button>
+      </div>
+
       <div className="admin-stats">
         <button className={`admin-stat ${aba === 'pendentes' ? 'active' : ''}`} onClick={() => setAba('pendentes')}>
           <h3>⏳ Pendentes</h3>
           <p>{pendentes.length}</p>
         </button>
-        <button className={`admin-stat ${aba === 'aprovadas' ? 'active' : ''}`} onClick={() => setAba('aprovadas')}>
+        <button className={`admin-stat ${aba === 'aprovados' ? 'active' : ''}`} onClick={() => setAba('aprovados')}>
           <h3>✅ Aprovados</h3>
           <p>{aprovadas.length}</p>
         </button>
@@ -196,12 +213,15 @@ function PainelAprovacoes({ user }) {
 
       <div className="admin-lista">
         {visivel.length === 0 && (
-          <div className="admin-vazio">{aba === 'pendentes' ? 'Nenhuma solicitação aguardando aprovação.' : 'Nenhum cadastro aprovado ainda.'}</div>
+          <div className="admin-vazio">
+            {aba === 'pendentes'
+              ? `Nenhum ${grupo === 'empresas' ? 'empresa aguardando' : 'entregador aguardando'} aprovação.`
+              : `Nenhum cadastro aprovado neste grupo ainda.`}
+          </div>
         )}
         {visivel.map(s => (
           <div key={s.id} className="admin-item">
             <div className="admin-item-badge">
-              <span className={`badge-tipo ${s.tipo}`}>{s.tipo === 'empresa' ? '🏢 EMPRESA' : '🛵 ENTREGADOR'}</span>
               {s.aprovado ? <span className="badge-status aprovado">APROVADO</span> : <span className="badge-status pendente">AGUARDANDO</span>}
             </div>
             <div className="admin-item-info">
@@ -224,14 +244,17 @@ function PainelAprovacoes({ user }) {
 
       <div className="admin-manutencao">
         <h4>⚠️ Zona de Manutenção</h4>
-        <p>Apaga permanentemente os dados do banco. Use com cuidado!</p>
+        <p>Apaga permanentemente os dados do grupo selecionado. Use com cuidado!</p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button className="admin-btn reset" disabled={resetando !== ''} onClick={resetarEntregadores}>
-            {resetando === 'entregadores' ? 'RESETANDO...' : '🔄 RESETAR ENTREGADORES'}
-          </button>
-          <button className="admin-btn reset" disabled={resetando !== ''} onClick={resetarEmpresas}>
-            {resetando === 'empresas' ? 'RESETANDO...' : '🔄 RESETAR EMPRESAS'}
-          </button>
+          {grupo === 'entregadores' ? (
+            <button className="admin-btn reset" disabled={resetando !== ''} onClick={resetarEntregadores}>
+              {resetando === 'entregadores' ? 'RESETANDO...' : '🔄 RESETAR ENTREGADORES'}
+            </button>
+          ) : (
+            <button className="admin-btn reset" disabled={resetando !== ''} onClick={resetarEmpresas}>
+              {resetando === 'empresas' ? 'RESETANDO...' : '🔄 RESETAR EMPRESAS'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -98,6 +98,13 @@ body {
 .admin-stat h3 { font-size: 0.85rem; color: #94a3b8; }
 .admin-stat p { font-size: 1.6rem; font-weight: 800; margin-top: 4px; }
 
+.admin-grupos { margin-bottom: 12px; }
+.admin-grupo { text-align: center; padding: 18px; }
+.admin-grupo h3 { font-size: 1rem; letter-spacing: 0.04em; }
+.admin-grupo.active h3 { color: #c7d2fe; }
+.admin-grupo.entregadores.active { border-color: #10b981; background: rgba(16, 185, 129, 0.12); }
+.admin-grupo.empresas.active { border-color: #6366f1; background: rgba(99, 102, 241, 0.12); }
+
 .admin-lista { display: flex; flex-direction: column; gap: 10px; }
 
 .admin-vazio { text-align: center; padding: 40px; color: #64748b; background: #1e293b; border-radius: 12px; border: 1px dashed #334155; }
