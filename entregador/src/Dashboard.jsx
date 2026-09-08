@@ -212,7 +212,7 @@ export default function Dashboard({ user }) {
   // Monitora se o entregador está bloqueado
   useEffect(() => {
     // Busca nomes das empresas para mostrar no alerta de bloqueio
-    onValue(ref(db, 'empresas'), snap => {
+    const unsubEmpresas = onValue(ref(db, 'empresas'), snap => {
         setListaEmpresas(snap.val() || {});
     });
 
@@ -233,7 +233,7 @@ export default function Dashboard({ user }) {
         addLog('⚠️ SUA CONTA FOI SUSPENSA DO SISTEMA');
       }
     });
-    return unsub;
+    return () => { unsubEmpresas(); unsub(); };
   }, [user.uid]);
 
   // Mensagens da empresa (recebidas em tempo real)
@@ -459,6 +459,12 @@ export default function Dashboard({ user }) {
       );
     } else {
       addLog('Ficando Offline...');
+      // Para o alarme de nova oferta imediatamente
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      lastEntregasCount.current = 0;
       backgroundLocation.stopService().catch(() => {});
       stopKeepalive();
       try { wakeLockRef.current?.release?.(); } catch { /* ja liberado */ }
@@ -535,12 +541,12 @@ export default function Dashboard({ user }) {
         <div className="stats-row">
           <div className="stat-card">
             <span className="stat-label">Hoje</span>
-            <span className="stat-value">{entregas.filter(e => e.entregadorId === user.uid && e.status === 'entregue').length}</span>
+            <span className="stat-value">{entregas.filter(e => e.entregadorId === user.uid && e.status === 'entregue' && e.entregueEm && e.entregueEm >= new Date().setHours(0,0,0,0)).length}</span>
           </div>
           <div className="stat-card">
             <span className="stat-label">Ganhos</span>
             <span className="stat-value" style={{color: 'var(--success)'}}>
-              R$ {entregas.filter(e => e.entregadorId === user.uid && e.status === 'entregue').reduce((acc, curr) => acc + parseFloat(curr.valor || 0), 0).toFixed(2)}
+              R$ {entregas.filter(e => e.entregadorId === user.uid && e.status === 'entregue' && e.entregueEm && e.entregueEm >= new Date().setHours(0,0,0,0)).reduce((acc, curr) => acc + parseFloat(curr.valor || 0), 0).toFixed(2)}
             </span>
           </div>
         </div>

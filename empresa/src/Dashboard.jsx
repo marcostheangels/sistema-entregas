@@ -376,17 +376,19 @@ export default function Dashboard({ user }) {
   const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '' });
   const [coords, setCoords] = useState({ origem: null, destino: null });
   const [statusFiltro, setStatusFiltro] = useState('pendente');
+  const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    onValue(ref(db, `empresas/${user.uid}`), snap => setPerfil(snap.val()));
+    const unsubPerfil = onValue(ref(db, `empresas/${user.uid}`), snap => setPerfil(snap.val()));
     // Query indexada: só as entregas desta empresa (evita baixar o banco inteiro)
     const q = query(ref(db, 'entregas'), orderByChild('empresaId'), equalTo(user.uid));
-    onValue(q, snap => {
+    const unsubEntregas = onValue(q, snap => {
       const list = snap.val() ? Object.entries(snap.val()).map(([id, val]) => ({ id, ...val })) : [];
       setEntregas(list.reverse());
     });
-    onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
-    onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
+    const unsubEntregadores = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
+    const unsubPosicoes = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
+    return () => { unsubPerfil(); unsubEntregas(); unsubEntregadores(); unsubPosicoes(); };
   }, [user.uid]);
 
   // Reseta o chat quando a entrega e concluida ('entregue') ou removida do banco
@@ -416,20 +418,34 @@ export default function Dashboard({ user }) {
   const criarEntrega = async (e) => {
     e.preventDefault();
     if (!coords.origem || !coords.destino) { alert('Selecione os endereços nas sugestões!'); return; }
-    // Garante que temos o perfil (mesmo que ainda nao tenha carregado)
-    let p = perfil;
-    if (!p?.nome) {
-      try { const s = await get(ref(db, `empresas/${user.uid}`)); p = s.val(); if (p) setPerfil(p); } catch { /* usa fallback */ }
+    if (salvando) return;
+    setSalvando(true);
+    try {
+      // Garante que temos o perfil (mesmo que ainda nao tenha carregado)
+      let p = perfil;
+      if (!p?.nome) {
+        try { const s = await get(ref(db, `empresas/${user.uid}`)); p = s.val(); if (p) setPerfil(p); } catch { /* usa fallback */ }
+      }
+      // Distancia em linha reta entre coleta e destino (km)
+      const dLat = (coords.destino.lat - coords.origem.lat) * Math.PI / 180;
+      const dLng = (coords.destino.lng - coords.origem.lng) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(coords.origem.lat * Math.PI / 180) * Math.cos(coords.destino.lat * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const distanciaKm = Math.round(6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 10) / 10;
+      const novaRef = push(ref(db, 'entregas'));
+      await set(novaRef, {
+        ...form, empresaId: user.uid, status: 'pendente',
+        empresaNome: p?.nome || user.email,
+        empresaTelefone: p?.telefone || '',
+        createdAt: Date.now(), origemCoords: coords.origem, destinoCoords: coords.destino,
+        distanciaKm
+      });
+      setForm({ origem: '', destino: '', descricao: '', valor: '' });
+      setCoords({ origem: null, destino: null });
+    } finally {
+      setSalvando(false);
     }
-    const novaRef = push(ref(db, 'entregas'));
-    await set(novaRef, {
-      ...form, empresaId: user.uid, status: 'pendente',
-      empresaNome: p?.nome || user.email,
-      empresaTelefone: p?.telefone || '',
-      createdAt: Date.now(), origemCoords: coords.origem, destinoCoords: coords.destino
-    });
-    setForm({ origem: '', destino: '', descricao: '', valor: '' });
-    setCoords({ origem: null, destino: null });
   };
 
   const editarNomeEmpresa = async () => {
@@ -488,7 +504,7 @@ export default function Dashboard({ user }) {
         </div>
         <div className="stat-card">
           <h3>📡 Online</h3>
-          <p>{Object.values(posicoes).filter(p=>p.online).length}</p>
+          <p>{Object.values(posicoes).filter(p => p.online && Date.now() - (p.timestamp || 0) < 120000).length}</p>
         </div>
       </div>
 
@@ -552,7 +568,7 @@ export default function Dashboard({ user }) {
                 <input type="number" placeholder="R$ 0,00" value={form.valor} onChange={e=>setForm({...form, valor:e.target.value})} required className="input-field" />
               </div>
 
-              <button type="submit" className="btn-primary" style={{marginTop: '1rem'}}>PUBLICAR AGORA</button>
+              <button type="submit" className="btn-primary" style={{marginTop: '1rem'}} disabled={salvando}>{salvando ? 'PUBLICANDO...' : 'PUBLICAR AGORA'}</button>
             </form>
           </div>
 
@@ -561,12 +577,12 @@ export default function Dashboard({ user }) {
             <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem'}}>
                 <span>Total Entregue:</span>
-                <span style={{fontWeight: 700}}>{entregas.filter(e=>e.status==='entregue').length}</span>
+                <span style={{fontWeight: 700}}>{entregas.filter(e => e.status === 'entregue' && e.entregueEm && e.entregueEm >= new Date().setHours(0,0,0,0)).length}</span>
               </div>
               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '1rem', borderTop: '1px solid #eee', paddingTop: '10px'}}>
                 <span>Faturamento:</span>
                 <span style={{fontWeight: 900, color: 'var(--success)'}}>
-                  R$ {entregas.filter(e=>e.status==='entregue').reduce((acc, curr) => acc + parseFloat(curr.valor || 0), 0).toFixed(2)}
+                  R$ {entregas.filter(e => e.status === 'entregue' && e.entregueEm && e.entregueEm >= new Date().setHours(0,0,0,0)).reduce((acc, curr) => acc + parseFloat(curr.valor || 0), 0).toFixed(2)}
                 </span>
               </div>
             </div>
