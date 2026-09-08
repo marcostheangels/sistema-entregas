@@ -69,14 +69,14 @@ function MensagemBox({ entregadorId, empresaId, empresaNome, entregas }) {
   const [enviada, setEnviada] = useState(false);
   const [erro, setErro] = useState('');
   // Chat liberado somente com entrega ativa (aceite ou em_transito) entre esta empresa e o entregador
-  const temEntregaAtiva = entregas.some(e => e.entregadorId === entregadorId && ['aceite', 'em_transito'].includes(e.status));
+  const entregaAtiva = entregas.find(e => e.entregadorId === entregadorId && ['aceite', 'em_transito'].includes(e.status));
 
   const enviar = async () => {
     const t = texto.trim();
-    if (!t) return;
+    if (!t || !entregaAtiva) return;
     try {
       await push(ref(db, 'mensagens'), {
-        empresaId, entregadorId, empresaNome,
+        empresaId, entregadorId, empresaNome, entregaId: entregaAtiva.id,
         texto: t.slice(0, 500), de: 'empresa', timestamp: Date.now()
       });
       setTexto('');
@@ -88,7 +88,7 @@ function MensagemBox({ entregadorId, empresaId, empresaNome, entregas }) {
     }
   };
 
-  if (!temEntregaAtiva) {
+  if (!entregaAtiva) {
     return (
       <div style={{marginTop:'10px', borderTop:'1px solid #eee', paddingTop:'8px', fontSize:'0.72rem', color:'var(--text-muted)', fontStyle:'italic'}}>
         Chat disponível somente durante uma entrega ativa com este entregador.
@@ -192,9 +192,12 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores }) {
   const enviar = async () => {
     const t = texto.trim();
     if (!t || !ativo) return;
+    // Exige entrega ativa real com o entregador selecionado
+    const entregaAtiva = entregas.find(e => e.entregadorId === ativo && ['aceite', 'em_transito'].includes(e.status));
+    if (!entregaAtiva) return;
     try {
       await push(ref(db, 'mensagens'), {
-        empresaId, entregadorId: ativo, empresaNome,
+        empresaId, entregadorId: ativo, empresaNome, entregaId: entregaAtiva.id,
         texto: t.slice(0, 500), de: 'empresa', timestamp: Date.now()
       });
       setTexto('');

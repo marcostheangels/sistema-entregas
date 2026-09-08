@@ -263,11 +263,15 @@ export default function Dashboard({ user }) {
   const enviarResposta = async () => {
     const t = resposta.trim();
     if (!t || !mensagemNova) return;
+    // Exige entrega ativa real com a empresa da mensagem
+    const entregaAtiva = entregas.find(e => e.empresaId === mensagemNova.empresaId && e.entregadorId === user.uid && ['aceite', 'em_transito'].includes(e.status));
+    if (!entregaAtiva) return;
     try {
       await push(ref(db, 'mensagens'), {
         empresaId: mensagemNova.empresaId,
         entregadorId: user.uid,
         empresaNome: mensagemNova.empresaNome || '',
+        entregaId: entregaAtiva.id,
         texto: t.slice(0, 500),
         de: 'entregador',
         timestamp: Date.now()

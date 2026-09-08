@@ -52,9 +52,10 @@
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       ".indexOn": ["entregadorId", "empresaId"],
       "$id": {
-        ".write": "auth != null && (newData.child('empresaId').val() === auth.uid || newData.child('entregadorId').val() === auth.uid)",
+        ".write": "auth != null && ((newData.child('de').val() === 'empresa' && newData.child('empresaId').val() === auth.uid) || (newData.child('de').val() === 'entregador' && newData.child('entregadorId').val() === auth.uid)) && root.child('entregas').child(newData.child('entregaId').val()).child('empresaId').val() === newData.child('empresaId').val() && root.child('entregas').child(newData.child('entregaId').val()).child('entregadorId').val() === newData.child('entregadorId').val() && (root.child('entregas').child(newData.child('entregaId').val()).child('status').val() === 'aceite' || root.child('entregas').child(newData.child('entregaId').val()).child('status').val() === 'em_transito')",
         "empresaId": { ".validate": "newData.isString()" },
         "entregadorId": { ".validate": "newData.isString()" },
+        "entregaId": { ".validate": "newData.isString()" },
         "texto": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
         "de": { ".validate": "newData.val() === 'empresa' || newData.val() === 'entregador'" },
         "empresaNome": { ".validate": true },
