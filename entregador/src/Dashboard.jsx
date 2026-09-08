@@ -757,6 +757,10 @@ export default function Dashboard({ user }) {
     // Queries indexadas: só entregas pendentes + só as minhas (evita baixar o banco inteiro)
     const qPendentes = query(ref(db, 'entregas'), orderByChild('status'), equalTo('pendente'));
     const qMinhas = query(ref(db, 'entregas'), orderByChild('entregadorId'), equalTo(user.uid));
+    // Ocupacao de todos os entregadores (para o despacho: tocar so para quem esta livre)
+    const qAceite = query(ref(db, 'entregas'), orderByChild('status'), equalTo('aceite'));
+    const qTransito = query(ref(db, 'entregas'), orderByChild('status'), equalTo('em_transito'));
+    const unsubPosicoes = onValue(ref(db, 'posicoes'), snap => { posicoesRef.current = snap.val() || {}; });
 
     const unsubPendentes = onValue(qPendentes, (snap) => {
       const data = snapToMap(snap);
@@ -770,8 +774,22 @@ export default function Dashboard({ user }) {
           return true;
       });
 
-      if (pendentesVisiveis.length > lastEntregasCount.current && onlineRef.current) {
-        addLog('🔔 Nova entrega disponível!');
+      // Despacho inteligente: alarme apenas para entregadores LIVRES.
+      // Se todos os online estiverem ocupados, toca para todos.
+      const souOcupado = Object.values(entregasStore.current.minhas || {}).some(e => e.status === 'aceite' || e.status === 'em_transito');
+      const ocupados = new Set(
+        [...Object.values(entregasStore.current.aceite || {}), ...Object.values(entregasStore.current.transito || {})]
+          .map(e => e.entregadorId).filter(Boolean)
+      );
+      const agoraTs = Date.now();
+      const livresOnline = Object.entries(posicoesRef.current).filter(([id, p]) =>
+        id !== user.uid && p.online && agoraTs - (p.timestamp || 0) < 120000 && !ocupados.has(id)
+      ).length;
+      const devoTocar = onlineRef.current && pendentesVisiveis.length > lastEntregasCount.current &&
+        (!souOcupado || livresOnline === 0);
+
+      if (devoTocar) {
+        addLog(souOcupado ? '🔔 Todos ocupados! Nova entrega para você também!' : '🔔 Nova entrega disponível!');
         if (audioRef.current) {
           audioRef.current.loop = true;
           audioRef.current.play().catch(e => addLog('Erro áudio: ' + e.message));
@@ -791,7 +809,9 @@ export default function Dashboard({ user }) {
       entregasStore.current.minhas = snapToMap(snap);
       combinarEntregas();
     });
-    return () => { unsubPendentes(); unsubMinhas(); };
+    const unsubAceite = onValue(qAceite, (snap) => { entregasStore.current.aceite = snapToMap(snap); });
+    const unsubTransito = onValue(qTransito, (snap) => { entregasStore.current.transito = snapToMap(snap); });
+    return () => { unsubPendentes(); unsubMinhas(); unsubAceite(); unsubTransito(); unsubPosicoes(); };
   }, [user.uid]);
 
   // Reseta o chat quando uma entrega e concluida ('entregue') ou removida do banco
