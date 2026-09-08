@@ -33,30 +33,53 @@ const haversineKm = (a, b) => {
 const minEstimado = (km) => (km == null ? null : Math.max(1, Math.round(km / (25 / 60))));
 
 // -- MAP COMPONENTS --
+// Marcador estilo Uber/99: circulo colorido com emoji
+const iconeEmoji = (emoji, cor) => L.divIcon({
+  html: `<div style="width:38px;height:38px;border-radius:50%;background:${cor};display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:2.5px solid white;">${emoji}</div>`,
+  className: '',
+  iconSize: [38, 38],
+  iconAnchor: [19, 19]
+});
+
+// Icones fixos: moto (voce), empresa (coleta) e casa (destino)
+const iconMoto = iconeEmoji('🛵', '#3b82f6');
+const iconEmpresa = iconeEmoji('🏢', '#f59e0b');
+const iconCasa = iconeEmoji('🏠', '#10b981');
+
 function MapUpdater({ position }) {
   const map = useMap();
+  // Depois que o usuario arrasta ou da zoom, o mapa para de seguir por 15s (e nao reseta o zoom)
+  const interagiu = useRef(false);
+  const timer = useRef(null);
+  const jaCentrou = useRef(false);
   useEffect(() => {
-    if (position) map.setView([position.lat, position.lng], 16);
+    const marcar = () => {
+      interagiu.current = true;
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => { interagiu.current = false; }, 15000);
+    };
+    map.on('dragstart', marcar);
+    map.on('zoomstart', marcar);
+    return () => {
+      map.off('dragstart', marcar);
+      map.off('zoomstart', marcar);
+      clearTimeout(timer.current);
+    };
+  }, [map]);
+  useEffect(() => {
+    if (!position || interagiu.current) return;
+    // Primeira centralizacao aproxima; depois mantem o zoom escolhido pelo usuario
+    if (!jaCentrou.current) {
+      map.setView([position.lat, position.lng], 16);
+      jaCentrou.current = true;
+    } else {
+      map.setView([position.lat, position.lng], map.getZoom());
+    }
   }, [position, map]);
   return null;
 }
 
 const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
-  const icons = useMemo(() => ({
-    delivery: new L.Icon({
-      iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-      iconSize: [45, 45], iconAnchor: [22, 45], popupAnchor: [0, -45]
-    }),
-    store: new L.Icon({
-      iconUrl: 'https://cdn-icons-png.flaticon.com/512/483/483947.png',
-      iconSize: [35, 35], iconAnchor: [17, 35], popupAnchor: [0, -35]
-    }),
-    dest: new L.Icon({
-      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1673/1673221.png',
-      iconSize: [35, 35], iconAnchor: [17, 35], popupAnchor: [0, -35]
-    })
-  }), []);
-
   const center = useMemo(() => {
     if (posicao) return [posicao.lat, posicao.lng];
     if (entrega?.origemCoords) return [entrega.origemCoords.lat, entrega.origemCoords.lng];
@@ -64,22 +87,19 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
   }, [posicao, entrega]);
 
   return (
-    <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+    <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={true}>
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <MapUpdater position={posicao} />
-      {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={icons.delivery}><Popup>Você</Popup></Marker>}
-      {entrega?.origemCoords && <Marker position={[entrega.origemCoords.lat, entrega.origemCoords.lng]} icon={icons.store}><Popup>Coleta</Popup></Marker>}
-      {entrega?.destinoCoords && <Marker position={[entrega.destinoCoords.lat, entrega.destinoCoords.lng]} icon={icons.dest}><Popup>Entrega</Popup></Marker>}
+      {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconMoto}><Popup>Você</Popup></Marker>}
+      {entrega?.origemCoords && <Marker position={[entrega.origemCoords.lat, entrega.origemCoords.lng]} icon={iconEmpresa}><Popup>Coleta</Popup></Marker>}
+      {entrega?.destinoCoords && <Marker position={[entrega.destinoCoords.lat, entrega.destinoCoords.lng]} icon={iconCasa}><Popup>Entrega</Popup></Marker>}
       {rotaInfo?.coords && <Polyline positions={rotaInfo.coords.map(c => [c[1], c[0]])} color="#6366f1" weight={6} opacity={0.8} />}
     </MapContainer>
   );
 };
 
-// Icone do entregador reutilizado nos mapas
-const iconEntregador = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-  iconSize: [45, 45], iconAnchor: [22, 45], popupAnchor: [0, -45]
-});
+// Icone do entregador reutilizado nos mapas (moto, estilo Uber)
+const iconEntregador = iconMoto;
 
 // Mini mapa fixo no painel: localizacao atual do entregador, estilo Uber/99
 const MiniMapa = ({ posicao, online, onExpand }) => (
@@ -92,7 +112,7 @@ const MiniMapa = ({ posicao, online, onExpand }) => (
       </div>
     </div>
     <div className="minimapa-mapa">
-      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={false} attributionControl={false}>
+      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={true} attributionControl={false}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapUpdater position={posicao} />
         {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconEntregador}><Popup>Você está aqui</Popup></Marker>}
@@ -111,7 +131,7 @@ const MapaCheio = ({ posicao, online, onClose }) => (
       <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
     </div>
     <div style={{flex: 1, position: 'relative'}}>
-      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={false}>
+      <MapContainer center={posicao ? [posicao.lat, posicao.lng] : [-19.9369, -44.9328]} zoom={16} style={{height: '100%', width: '100%'}} zoomControl={true}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapUpdater position={posicao} />
         {posicao && <Marker position={[posicao.lat, posicao.lng]} icon={iconEntregador}><Popup>Você está aqui</Popup></Marker>}
