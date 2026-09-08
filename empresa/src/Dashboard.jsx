@@ -167,6 +167,26 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, onBlock
   );
 }
 
+// Som de resposta recebida: dois bipes agudos curtos (diferente dos outros alertas)
+const tocarChimeResposta = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [[988, 0], [1318.5, 0.18]].forEach(([freq, t]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      o.connect(g);
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.001, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.35);
+      o.start(ctx.currentTime + t);
+      o.stop(ctx.currentTime + t + 0.4);
+    });
+  } catch { /* sem audio */ }
+};
+
 export default function Dashboard({ user }) {
   const [entregas, setEntregas] = useState([]);
   const [entregadores, setEntregadores] = useState({});
@@ -175,9 +195,27 @@ export default function Dashboard({ user }) {
   const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '' });
   const [coords, setCoords] = useState({ origem: null, destino: null });
   const [statusFiltro, setStatusFiltro] = useState('pendente');
+  const [mensagemRecebida, setMensagemRecebida] = useState(null);
+  const lastReplyTs = useRef(Date.now());
 
   useEffect(() => {
     onValue(ref(db, `empresas/${user.uid}`), snap => setPerfil(snap.val()));
+    // Aviso de resposta do entregador (mensagens enviadas por ele)
+    const qRespostas = query(ref(db, 'mensagens'), orderByChild('empresaId'), equalTo(user.uid));
+    const unsubRespostas = onValue(qRespostas, snap => {
+      let maisNova = null;
+      snap.forEach(c => {
+        const m = c.val();
+        if (m.de === 'entregador' && m.timestamp > lastReplyTs.current && (!maisNova || m.timestamp > maisNova.timestamp)) {
+          maisNova = { id: c.key, ...m };
+        }
+      });
+      if (maisNova) {
+        lastReplyTs.current = maisNova.timestamp;
+        setMensagemRecebida(maisNova);
+        tocarChimeResposta();
+      }
+    });
     // Query indexada: só as entregas desta empresa (evita baixar o banco inteiro)
     const q = query(ref(db, 'entregas'), orderByChild('empresaId'), equalTo(user.uid));
     onValue(q, snap => {
@@ -186,6 +224,7 @@ export default function Dashboard({ user }) {
     });
     onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
     onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
+    return () => unsubRespostas();
   }, [user.uid]);
 
   const criarEntrega = async (e) => {
@@ -245,6 +284,19 @@ export default function Dashboard({ user }) {
           <button onClick={() => signOut(auth)} className="btn-logout">SAIR</button>
         </div>
       </header>
+
+      {mensagemRecebida && (
+        <div style={{ background: '#fffbeb', border: '1px solid #f59e0b', padding: '14px 16px', borderRadius: '12px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.66rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#b45309', marginBottom: '3px' }}>
+              Resposta de {entregadores[mensagemRecebida.entregadorId]?.nome || 'Entregador'}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#78350f' }}>{mensagemRecebida.texto}</div>
+            <div style={{ fontSize: '0.7rem', color: '#a16207', marginTop: '3px' }}>{new Date(mensagemRecebida.timestamp).toLocaleTimeString('pt-BR')}</div>
+          </div>
+          <button onClick={() => setMensagemRecebida(null)} style={{ background: '#f59e0b', color: 'white', border: 'none', padding: '8px 18px', borderRadius: '9px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem', fontFamily: 'var(--font-display)', letterSpacing: '0.06em' }}>OK</button>
+        </div>
+      )}
 
       <div className="stats-grid">
         <div className={`stat-card clickable ${statusFiltro === 'pendente' ? 'active' : ''}`} onClick={() => setStatusFiltro('pendente')}>

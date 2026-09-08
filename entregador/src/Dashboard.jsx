@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ref, onValue, update, query, orderByChild, equalTo, runTransaction } from 'firebase/database';
+import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
@@ -148,6 +148,26 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
   );
 };
 
+// Som DE MENSAGEM: dois bipes agudos curtos (distinto do alarme de nova oferta)
+const tocarChimeMensagem = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [[880, 0], [1174.66, 0.18]].forEach(([freq, t]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      o.connect(g);
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.001, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.35);
+      o.start(ctx.currentTime + t);
+      o.stop(ctx.currentTime + t + 0.4);
+    });
+  } catch { /* dispositivo sem audio */ }
+};
+
 export default function Dashboard({ user }) {
   const [entregas, setEntregas] = useState([]);
   const [statusFiltro, setStatusFiltro] = useState('disponivel');
@@ -176,7 +196,8 @@ export default function Dashboard({ user }) {
   const empresasBloqueadasRef = useRef({});
   const [mensagemNova, setMensagemNova] = useState(null);
   const lastMsgTs = useRef(Date.now());
-  const msgAudioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3'));
+  const [resposta, setResposta] = useState('');
+  const [respostaOk, setRespostaOk] = useState(false);
   const workerRef = useRef(null);
   const wakeLockRef = useRef(null);
 
@@ -229,12 +250,36 @@ export default function Dashboard({ user }) {
       if (maisNova) {
         lastMsgTs.current = maisNova.timestamp;
         setMensagemNova(maisNova);
-        msgAudioRef.current.play().catch(() => {});
+        setResposta('');
+        setRespostaOk(false);
+        tocarChimeMensagem();
         addLog('Mensagem da empresa: ' + maisNova.texto);
       }
     });
     return unsub;
   }, [user.uid]);
+
+  // Resposta do entregador para a empresa
+  const enviarResposta = async () => {
+    const t = resposta.trim();
+    if (!t || !mensagemNova) return;
+    try {
+      await push(ref(db, 'mensagens'), {
+        empresaId: mensagemNova.empresaId,
+        entregadorId: user.uid,
+        empresaNome: mensagemNova.empresaNome || '',
+        texto: t.slice(0, 500),
+        de: 'entregador',
+        timestamp: Date.now()
+      });
+      setResposta('');
+      setRespostaOk(true);
+      addLog('Resposta enviada para ' + (mensagemNova.empresaNome || 'empresa'));
+      setTimeout(() => { setMensagemNova(null); setRespostaOk(false); }, 2500);
+    } catch (e) {
+      addLog('Erro ao responder: ' + e.message);
+    }
+  };
 
   useEffect(() => {
     checkPerms();
@@ -500,9 +545,17 @@ export default function Dashboard({ user }) {
             </div>
             <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{mensagemNova.texto}</div>
             <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: '4px' }}>{new Date(mensagemNova.timestamp).toLocaleTimeString('pt-BR')}</div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-              <button onClick={() => setMensagemNova(null)} style={{ background: '#6366f1', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 700, cursor: 'pointer', fontSize: '0.8rem' }}>OK</button>
-            </div>
+            {respostaOk ? (
+              <div style={{ marginTop: '10px', fontSize: '0.8rem', fontWeight: 800, color: '#0e9f6e' }}>Resposta enviada!</div>
+            ) : (
+              <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                <input value={resposta} onChange={e => setResposta(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviarResposta(); }}
+                  placeholder="Responder à empresa..." maxLength={500}
+                  style={{ flex: 1, padding: '8px 10px', borderRadius: '8px', border: '1px solid #c7d2fe', fontSize: '0.85rem', color: '#312e81', background: 'white' }} />
+                <button onClick={enviarResposta} style={{ background: '#6366f1', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem' }}>ENVIAR</button>
+                <button onClick={() => setMensagemNova(null)} style={{ background: 'transparent', color: '#6366f1', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem' }}>OK</button>
+              </div>
+            )}
           </div>
         )}
 
