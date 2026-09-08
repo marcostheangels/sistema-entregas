@@ -450,8 +450,8 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
       <MapContainer center={centerMoc} zoom={13} style={{ height: '400px', width: '100%' }} ref={mapRef}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {/* Rota da entrega em andamento + pontos de coleta e destino */}
-        {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup>Ponto de coleta</Popup></Marker>}
-        {entregaRota?.destinoCoords && <Marker position={[entregaRota.destinoCoords.lat, entregaRota.destinoCoords.lng]} icon={iconeDestinoEmp}><Popup>Destino da entrega</Popup></Marker>}
+        {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup><div style={{fontWeight: 700}}>🏢 Coleta: {entregaRota.origem || 'Ponto de coleta'}</div></Popup></Marker>}
+        {entregaRota?.destinoCoords && <Marker position={[entregaRota.destinoCoords.lat, entregaRota.destinoCoords.lng]} icon={iconeDestinoEmp}><Popup><div style={{fontWeight: 700}}>🏠 Entrega: {entregaRota.destino || 'Destino da entrega'}</div></Popup></Marker>}
         {rota?.coords && <Polyline positions={rota.coords} pathOptions={{ color: '#6366f1', weight: 5, opacity: 0.8 }} />}
         {Object.entries(posicoes).map(([id, pos]) => {
           if (id === currentUserId) return null;
