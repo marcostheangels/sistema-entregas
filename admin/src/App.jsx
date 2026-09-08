@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { ref, get, set, onValue, update, remove } from 'firebase/database';
+import { ref, get, set, onValue, update, remove, query, orderByChild } from 'firebase/database';
 import { auth, db } from './firebase';
 
 // Conta fixa do administrador principal
@@ -73,11 +73,39 @@ function PainelAprovacoes({ user }) {
   const [solicitacoes, setSolicitacoes] = useState(null);
   const [grupo, setGrupo] = useState('entregadores'); // 'entregadores' | 'empresas'
   const [aba, setAba] = useState('pendentes'); // 'pendentes' | 'aprovados'
+  const [busca, setBusca] = useState('');
+  const [entregas, setEntregas] = useState([]);
+  const [posicoes, setPosicoes] = useState({});
+  const [entregadores, setEntregadores] = useState({});
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'aprovacoes'), snap => setSolicitacoes(snap.val() || {}));
     return unsub;
   }, []);
+
+  // Dados ao vivo para a visao geral e o monitor de entregas
+  useEffect(() => {
+    const q = query(ref(db, 'entregas'), orderByChild('criadoEm'));
+    const u1 = onValue(q, snap => {
+      const list = [];
+      snap.forEach(c => list.push({ id: c.key, ...c.val() }));
+      setEntregas(list);
+    });
+    const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
+    const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
+    return () => { u1(); u2(); u3(); };
+  }, []);
+
+  // Metricas do dia
+  const inicioDia = new Date().setHours(0, 0, 0, 0);
+  const concluidasHoje = entregas.filter(e => e.status === 'entregue' && e.entregueEm && e.entregueEm >= inicioDia);
+  const faturamentoHoje = concluidasHoje.reduce((s, e) => s + parseFloat(e.valor || 0), 0);
+  const emAndamento = entregas.filter(e => e.status === 'aceite' || e.status === 'em_transito');
+  const agora = Date.now();
+  const onlineAgora = Object.values(posicoes).filter(p => p.online && agora - (p.timestamp || 0) < 120000).length;
+  // Ultimas entregas (mais recentes primeiro)
+  const ultimasEntregas = [...entregas].sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0)).slice(0, 8);
+  const nomeEntregador = (e) => e.entregadorNome || entregadores[e.entregadorId]?.nome || '—';
 
   const lista = Object.entries(solicitacoes || {})
     .map(([id, val]) => ({ id, ...val }))
@@ -86,7 +114,10 @@ function PainelAprovacoes({ user }) {
   const doGrupo = lista.filter(s => (s.tipo === 'empresa') === (grupo === 'empresas'));
   const pendentes = doGrupo.filter(s => !s.aprovado);
   const aprovadas = doGrupo.filter(s => s.aprovado);
-  const visivel = aba === 'pendentes' ? pendentes : aprovadas;
+  const termo = busca.trim().toLowerCase();
+  const visivel = (aba === 'pendentes' ? pendentes : aprovadas).filter(s =>
+    !termo || (s.nome || '').toLowerCase().includes(termo) || (s.email || '').toLowerCase().includes(termo) || (s.placa || '').toLowerCase().includes(termo)
+  );
   const totalGrupo = {
     entregadores: lista.filter(s => s.tipo === 'entregador').length,
     empresas: lista.filter(s => s.tipo === 'empresa').length
@@ -198,6 +229,25 @@ function PainelAprovacoes({ user }) {
         <button className="admin-btn-sair" onClick={() => signOut(auth)}>SAIR</button>
       </header>
 
+      <div className="admin-stats admin-visao">
+        <div className="admin-stat">
+          <h3>✅ Concluídas hoje</h3>
+          <p>{concluidasHoje.length}</p>
+        </div>
+        <div className="admin-stat">
+          <h3>💰 Faturamento hoje</h3>
+          <p style={{fontSize: '1.15rem', color: '#10b981'}}>R$ {faturamentoHoje.toFixed(2)}</p>
+        </div>
+        <div className="admin-stat">
+          <h3>🚚 Em andamento</h3>
+          <p>{emAndamento.length}</p>
+        </div>
+        <div className="admin-stat">
+          <h3>📡 Online agora</h3>
+          <p style={{color: '#10b981'}}>{onlineAgora}</p>
+        </div>
+      </div>
+
       <div className="admin-stats admin-grupos">
         <button className={`admin-stat admin-grupo ${grupo === 'entregadores' ? 'active' : ''}`} onClick={() => setGrupo('entregadores')}>
           <h3>🛵 ENTREGADORES</h3>
@@ -220,18 +270,31 @@ function PainelAprovacoes({ user }) {
         </button>
       </div>
 
+      <div className="admin-busca">
+        <input
+          type="text"
+          placeholder="🔍 Buscar por nome, e-mail ou placa..."
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+        />
+        {busca && <button onClick={() => setBusca('')}>✕</button>}
+      </div>
+
       <div className="admin-lista">
         {visivel.length === 0 && (
           <div className="admin-vazio">
-            {aba === 'pendentes'
-              ? `Nenhum ${grupo === 'empresas' ? 'empresa aguardando' : 'entregador aguardando'} aprovação.`
-              : `Nenhum cadastro aprovado neste grupo ainda.`}
+            {termo
+              ? 'Nenhum resultado para a busca.'
+              : (aba === 'pendentes'
+                ? `Nenhum ${grupo === 'empresas' ? 'empresa aguardando' : 'entregador aguardando'} aprovação.`
+                : `Nenhum cadastro aprovado neste grupo ainda.`)}
           </div>
         )}
         {visivel.map(s => (
           <div key={s.id} className="admin-item">
             <div className="admin-item-badge">
               {s.aprovado ? <span className="badge-status aprovado">APROVADO</span> : <span className="badge-status pendente">AGUARDANDO</span>}
+              {grupo === 'entregadores' && entregadores[s.id]?.bloqueado && <span className="badge-status suspenso">SUSPENSO</span>}
             </div>
             <div className="admin-item-info">
               <div className="admin-item-nome">{s.nome || 'Sem nome'}</div>
@@ -243,12 +306,43 @@ function PainelAprovacoes({ user }) {
               {!s.aprovado ? (
                 <button className="admin-btn aprovar" onClick={() => aprovar(s.id)}>APROVAR</button>
               ) : (
-                <button className="admin-btn revogar" onClick={() => revogar(s.id)}>REVOGAR</button>
+                <>
+                  {grupo === 'entregadores' && (
+                    entregadores[s.id]?.bloqueado ? (
+                      <button className="admin-btn aprovar" onClick={() => update(ref(db, `entregadores/${s.id}`), { bloqueado: false })}>REATIVAR</button>
+                    ) : (
+                      <button className="admin-btn revogar" onClick={() => { if (window.confirm(`Suspender ${s.nome || s.email}? Ele ficará offline e sem receber pedidos.`)) update(ref(db, `entregadores/${s.id}`), { bloqueado: true }); }}>SUSPENDER</button>
+                    )
+                  )}
+                  <button className="admin-btn revogar" onClick={() => revogar(s.id)}>REVOGAR</button>
+                </>
               )}
               <button className="admin-btn excluir" onClick={() => excluir(s.id)}>EXCLUIR</button>
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="admin-monitor">
+        <h4>📈 Últimas entregas</h4>
+        {ultimasEntregas.length === 0 ? (
+          <div className="admin-vazio">Nenhuma entrega registrada ainda.</div>
+        ) : (
+          <div className="admin-entregas">
+            {ultimasEntregas.map(e => (
+              <div key={e.id} className="admin-entrega-item">
+                <span className={`ent-status ${e.status}`}>{
+                  { pendente: '⏳ PENDENTE', aceite: '🛵 ACEITA', em_transito: '🚚 EM ROTA', entregue: '✅ ENTREGUE' }[e.status] || e.status
+                }</span>
+                <span className="ent-info">
+                  <strong>{e.empresaNome || 'Empresa'}</strong> → {nomeEntregador(e)}
+                  <small>{e.destino || ''} {e.criadoEm ? `• ${new Date(e.criadoEm).toLocaleString('pt-BR')}` : ''}</small>
+                </span>
+                <span className="ent-valor">R$ {parseFloat(e.valor || 0).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="admin-manutencao">
