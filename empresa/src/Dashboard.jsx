@@ -314,13 +314,23 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
           const isBloqueado = info.empresasBloqueadas && info.empresasBloqueadas[currentUserId];
           // Posicao com mais de 60s sem atualizacao = sinal perdido (entregador fechou o app ou ficou sem rede)
           const semSinal = defasagem > 60000;
+          // Dados completos apenas quando ha pedido atribuido a este entregador
+          const entregaAtivaCom = entregas.find(e => e.entregadorId === id && ['aceite', 'em_transito'].includes(e.status));
+          const nome = entregaAtivaCom ? (info.nome || entregaAtivaCom.entregadorNome || 'Entregador') : 'Entregador';
+          const naoInformado = <span style={{ opacity: 0.5 }}>Não informado</span>;
           return (
-            <Marker key={id} position={[pos.lat, pos.lng]} icon={createIcon(info.nome || 'Entregador', pos.online, isBloqueado, semSinal)}>
+            <Marker key={id} position={[pos.lat, pos.lng]} icon={createIcon(nome, pos.online, isBloqueado, semSinal)}>
               <Popup>
                 <div style={{textAlign:'center', minWidth: '200px'}}>
-                  <h4 style={{margin: '0 0 5px 0'}}>{info.nome}</h4>
-                  <p style={{margin: '0', fontSize: '0.85rem', color: 'var(--success)', fontWeight: 700}}>📞 {info.telefone}</p>
-                  <p style={{margin: '5px 0', fontSize: '0.8rem'}}>🛵 {info.veiculo} | {info.placa}</p>
+                  <h4 style={{margin: '0 0 5px 0'}}>{entregaAtivaCom ? nome : '🛵 Entregador online'}</h4>
+                  {entregaAtivaCom ? (
+                    <>
+                      <p style={{margin: '0', fontSize: '0.85rem', color: 'var(--success)', fontWeight: 700}}>📞 {info.telefone || naoInformado}</p>
+                      <p style={{margin: '5px 0', fontSize: '0.8rem'}}>🛵 {info.veiculo || naoInformado} | {info.placa || naoInformado}</p>
+                    </>
+                  ) : (
+                    <p style={{margin: '0', fontSize: '0.78rem', color: 'var(--text-muted)'}}>Dados aparecem quando ele aceitar um pedido seu.</p>
+                  )}
                   <p style={{margin: '5px 0', fontSize: '0.75rem', color: semSinal ? '#b45309' : 'var(--text-muted)', fontWeight: semSinal ? 700 : 400}}>
                     Última atualização: {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '--'}{semSinal ? ' (sem sinal novo)' : ''}
                   </p>
