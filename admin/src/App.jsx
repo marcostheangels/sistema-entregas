@@ -3,9 +3,13 @@ import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndP
 import { ref, get, set, onValue, update, remove } from 'firebase/database';
 import { auth, db } from './firebase';
 
-function LoginScreen({ adminExists }) {
-  const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
+// Conta fixa do administrador principal
+const ADMIN_EMAIL = 'marcostheangels@gmail.com';
+const ADMIN_SENHA = '[SENHA-REMOVIDA]';
+
+function LoginScreen() {
+  const [email, setEmail] = useState(ADMIN_EMAIL);
+  const [senha, setSenha] = useState(ADMIN_SENHA);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -13,28 +17,34 @@ function LoginScreen({ adminExists }) {
     e.preventDefault();
     setError('');
     setLoading(true);
+    if (email.trim().toLowerCase() !== ADMIN_EMAIL) {
+      setError('Apenas a conta fixa do administrador pode acessar este painel.');
+      setLoading(false);
+      return;
+    }
     try {
-      if (!adminExists) {
-        const cred = await createUserWithEmailAndPassword(auth, email, senha);
-        // Primeiro acesso: reivindica o posto de administrador
-        await set(ref(db, `admin/${cred.user.uid}`), true);
-      } else {
-        const cred = await signInWithEmailAndPassword(auth, email, senha);
-        const s = await get(ref(db, `admin/${cred.user.uid}`));
-        if (s.val() !== true) {
-          await signOut(auth);
-          setError('Esta conta não é o administrador do sistema.');
+      let cred;
+      try {
+        cred = await signInWithEmailAndPassword(auth, email.trim(), senha);
+      } catch (err) {
+        if (err.code === 'auth/user-not-found') {
+          // Primeira configuracao: cria a conta fixa do administrador
+          cred = await createUserWithEmailAndPassword(auth, email.trim(), senha);
+        } else {
+          throw err;
         }
       }
+      // Garante o registro de administrador (substitui qualquer registro antigo)
+      await set(ref(db, 'admin'), { [cred.user.uid]: true });
     } catch (err) {
       const map = {
-        'auth/email-already-in-use': 'Este e-mail já está em uso.',
+        'auth/email-already-in-use': 'Esta conta já existe com outra senha. Restaure a senha correta no Console do Firebase.',
         'auth/invalid-email': 'E-mail inválido.',
         'auth/weak-password': 'A senha deve ter pelo menos 6 caracteres.',
         'auth/user-not-found': 'E-mail ou senha incorretos.',
         'auth/wrong-password': 'E-mail ou senha incorretos.',
         'auth/invalid-credential': 'E-mail ou senha incorretos.',
-        'PERMISSION_DENIED': 'Operação negada: já existe um administrador.'
+        'PERMISSION_DENIED': 'Operação negada. Publique as regras atualizadas no Console do Firebase.'
       };
       setError(map[err.code] || 'Erro: ' + err.message);
     } finally {
@@ -47,12 +57,11 @@ function LoginScreen({ adminExists }) {
       <div className="admin-login-card">
         <div className="admin-logo">🛡️</div>
         <h1>Administração</h1>
-        <p>{adminExists ? 'Acesso restrito do administrador' : 'Primeiro acesso — crie a conta do administrador'}</p>
-        {!adminExists && <div className="admin-notice">A primeira conta criada aqui se tornará o administrador do sistema. Guarde bem este e-mail e senha!</div>}
+        <p>Acesso exclusivo do administrador</p>
         <form onSubmit={handleSubmit}>
           <input type="email" placeholder="E-mail do administrador" value={email} onChange={e => setEmail(e.target.value)} required />
           <input type="password" placeholder="Senha" value={senha} onChange={e => setSenha(e.target.value)} required />
-          <button type="submit" disabled={loading}>{loading ? 'Processando...' : (adminExists ? 'ENTRAR' : 'CRIAR CONTA DE ADMINISTRADOR')}</button>
+          <button type="submit" disabled={loading}>{loading ? 'Processando...' : 'ENTRAR'}</button>
         </form>
         {error && <div className="admin-error">{error}</div>}
       </div>
@@ -153,7 +162,7 @@ function PainelAprovacoes({ user }) {
       const n = await resetarAprovacoes('entregador');
       window.alert(`Entregadores resetados! ${n} solicitação(ões) de aprovação removida(s).`);
     } catch (e) {
-      window.alert('Erro no reset: ' + e.message);
+      window.alert('Erro no reset: ' + e.message + (String(e.message).includes('PERMISSION_DENIED') ? '\n\nProvável causa: as regras atualizadas não foram publicadas no Console do Firebase (Rules), ou você não está logado com a conta fixa do administrador.' : ''));
     } finally {
       setResetando('');
     }
@@ -170,7 +179,7 @@ function PainelAprovacoes({ user }) {
       const n = await resetarAprovacoes('empresa');
       window.alert(`Empresas resetadas! ${n} solicitação(ões) de aprovação removida(s).`);
     } catch (e) {
-      window.alert('Erro no reset: ' + e.message);
+      window.alert('Erro no reset: ' + e.message + (String(e.message).includes('PERMISSION_DENIED') ? '\n\nProvável causa: as regras atualizadas não foram publicadas no Console do Firebase (Rules), ou você não está logado com a conta fixa do administrador.' : ''));
     } finally {
       setResetando('');
     }
@@ -283,36 +292,41 @@ function PainelAprovacoes({ user }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
-  const [adminExists, setAdminExists] = useState(null);
 
   useEffect(() => {
-    get(ref(db, 'admin')).then(s => setAdminExists(s.exists())).catch(() => setAdminExists(false));
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
       setInitializing(false);
     });
   }, []);
 
-  if (initializing || adminExists === null) {
+  if (initializing) {
     return <div className="admin-loading">Carregando...</div>;
   }
 
   return (
     <div className="admin-app">
-      <GatedContent user={user} adminExists={adminExists} />
+      <GatedContent user={user} />
     </div>
   );
 }
 
-function GatedContent({ user, adminExists }) {
+function GatedContent({ user }) {
   const [isAdmin, setIsAdmin] = useState(null);
 
   useEffect(() => {
     if (!user) { setIsAdmin(null); return; }
+    if (user.email?.toLowerCase() === ADMIN_EMAIL) {
+      // Conta fixa: garante o registro de administrador e substitui registros antigos
+      set(ref(db, 'admin'), { [user.uid]: true })
+        .then(() => setIsAdmin(true))
+        .catch(() => setIsAdmin(false));
+      return;
+    }
     get(ref(db, `admin/${user.uid}`)).then(s => setIsAdmin(s.val() === true)).catch(() => setIsAdmin(false));
   }, [user]);
 
-  if (!user) return <LoginScreen adminExists={adminExists} />;
+  if (!user) return <LoginScreen />;
   if (isAdmin === null) return <div className="admin-loading">Verificando permissões...</div>;
   if (!isAdmin) {
     return (

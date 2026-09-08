@@ -37,7 +37,18 @@ function Login({ onAuth }) {
     try {
       if (isCadastro) {
         if (!nome.trim()) { setErro('Informe o nome da empresa.'); setLoading(false); return; }
-        const cred = await createUserWithEmailAndPassword(auth, email, senha);
+        let cred;
+        try {
+          cred = await createUserWithEmailAndPassword(auth, email, senha);
+        } catch (errCadastro) {
+          if (errCadastro.code === 'auth/email-already-in-use') {
+            // E-mail ja existe no Firebase Auth (ex.: cadastro anterior apagado no reset):
+            // entra com a senha informada e reaproveita a conta
+            cred = await signInWithEmailAndPassword(auth, email, senha);
+          } else {
+            throw errCadastro;
+          }
+        }
         await set(ref(db, `empresas/${cred.user.uid}`), {
           nome: nome.trim(), email,
           telefone: telefone.replace(/\D/g, ''),
@@ -56,7 +67,7 @@ function Login({ onAuth }) {
       }
     } catch (err) {
       const map = {
-        'auth/email-already-in-use': 'Este e-mail já está em uso.',
+        'auth/email-already-in-use': 'Este e-mail já tem conta com outra senha diferente da informada.',
         'auth/invalid-email': 'E-mail inválido.',
         'auth/weak-password': 'A senha deve ter pelo menos 6 caracteres.',
         'auth/user-not-found': 'E-mail ou senha incorretos.',
