@@ -81,6 +81,62 @@ function PainelAprovacoes({ user }) {
   const revogar = (id) => update(ref(db, `aprovacoes/${id}`), { aprovado: false, aprovadoEm: null });
   const excluir = (id) => { if (window.confirm('Excluir esta solicitação? O cadastro ficará bloqueado até nova solicitação.')) remove(ref(db, `aprovacoes/${id}`)); };
 
+  // ---- Dados completos do cadastro ----
+  const [detalhes, setDetalhes] = useState(null); // { tipo, nome, dados }
+  const verDados = async (s) => {
+    const no = s.tipo === 'empresa' ? 'empresas' : 'entregadores';
+    try {
+      const snap = await get(ref(db, `${no}/${s.id}`));
+      setDetalhes({ tipo: s.tipo, nome: s.nome, dados: snap.val() || { '(aviso)': 'Perfil não encontrado no banco (talvez já tenha sido resetado).' } });
+    } catch (e) {
+      setDetalhes({ tipo: s.tipo, nome: s.nome, dados: { '(erro)': e.message } });
+    }
+  };
+
+  // ---- Reset geral ----
+  const [resetando, setResetando] = useState('');
+  const resetarAprovacoes = async (tipo) => {
+    const snap = await get(ref(db, 'aprovacoes'));
+    const removidos = [];
+    snap.forEach(c => { if (c.val()?.tipo === tipo) removidos.push(c.key); });
+    for (const id of removidos) await remove(ref(db, `aprovacoes/${id}`));
+    return removidos.length;
+  };
+
+  const resetarEntregadores = async () => {
+    const msg = 'RESETAR TODOS OS ENTREGADORES?\n\nSerão apagados permanentemente:\n- Todos os perfis de entregadores\n- Todas as posições/rastreamentos\n- Todas as mensagens\n- As solicitações de aprovação de entregadores\n\nNão dá para desfazer!';
+    if (!window.confirm(msg)) return;
+    setResetando('entregadores');
+    try {
+      await remove(ref(db, 'entregadores'));
+      await remove(ref(db, 'posicoes'));
+      await remove(ref(db, 'mensagens'));
+      const n = await resetarAprovacoes('entregador');
+      window.alert(`Entregadores resetados! ${n} solicitação(ões) de aprovação removida(s).`);
+    } catch (e) {
+      window.alert('Erro no reset: ' + e.message);
+    } finally {
+      setResetando('');
+    }
+  };
+
+  const resetarEmpresas = async () => {
+    const msg = 'RESETAR TODAS AS EMPRESAS?\n\nSerão apagados permanentemente:\n- Todos os perfis de empresas\n- Todas as entregas\n- Todas as mensagens\n- As solicitações de aprovação de empresas\n\nNão dá para desfazer!';
+    if (!window.confirm(msg)) return;
+    setResetando('empresas');
+    try {
+      await remove(ref(db, 'empresas'));
+      await remove(ref(db, 'entregas'));
+      await remove(ref(db, 'mensagens'));
+      const n = await resetarAprovacoes('empresa');
+      window.alert(`Empresas resetadas! ${n} solicitação(ões) de aprovação removida(s).`);
+    } catch (e) {
+      window.alert('Erro no reset: ' + e.message);
+    } finally {
+      setResetando('');
+    }
+  };
+
   return (
     <div className="admin-painel">
       <header className="admin-header">
@@ -121,6 +177,7 @@ function PainelAprovacoes({ user }) {
               <div className="admin-item-data">Solicitado em {s.criadoEm ? new Date(s.criadoEm).toLocaleString('pt-BR') : '--'}</div>
             </div>
             <div className="admin-item-acoes">
+              <button className="admin-btn dados" onClick={() => verDados(s)}>VER DADOS</button>
               {!s.aprovado ? (
                 <button className="admin-btn aprovar" onClick={() => aprovar(s.id)}>APROVAR</button>
               ) : (
@@ -131,6 +188,38 @@ function PainelAprovacoes({ user }) {
           </div>
         ))}
       </div>
+
+      <div className="admin-manutencao">
+        <h4>⚠️ Zona de Manutenção</h4>
+        <p>Apaga permanentemente os dados do banco. Use com cuidado!</p>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="admin-btn reset" disabled={resetando !== ''} onClick={resetarEntregadores}>
+            {resetando === 'entregadores' ? 'RESETANDO...' : '🔄 RESETAR ENTREGADORES'}
+          </button>
+          <button className="admin-btn reset" disabled={resetando !== ''} onClick={resetarEmpresas}>
+            {resetando === 'empresas' ? 'RESETANDO...' : '🔄 RESETAR EMPRESAS'}
+          </button>
+        </div>
+      </div>
+
+      {detalhes && (
+        <div className="admin-modal-fundo" onClick={() => setDetalhes(null)}>
+          <div className="admin-modal" onClick={e => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h3>{detalhes.tipo === 'empresa' ? '🏢' : '🛵'} {detalhes.nome || 'Cadastro'}</h3>
+              <button className="admin-btn excluir" onClick={() => setDetalhes(null)}>FECHAR</button>
+            </div>
+            <div className="admin-dados">
+              {Object.entries(detalhes.dados || {}).map(([chave, valor]) => (
+                <div key={chave} className="admin-dado-linha">
+                  <span className="admin-dado-chave">{chave}</span>
+                  <span className="admin-dado-valor">{typeof valor === 'object' && valor !== null ? JSON.stringify(valor) : String(valor)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

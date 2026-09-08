@@ -4,14 +4,14 @@
       ".read": "auth != null",
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid"
+        ".write": "auth != null && (auth.uid === $uid || root.child('admin').child(auth.uid).val() === true)"
       }
     },
     "entregadores": {
       ".read": "auth != null",
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && (auth.uid === $uid || root.child('admin').child(auth.uid).val() === true)",
         "empresasBloqueadas": {
           "$empresaId": {
             ".write": "auth != null && auth.uid === $empresaId"
