@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth } from './firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { ref, set, onValue } from 'firebase/database';
+import { ref, get, set, onValue } from 'firebase/database';
 import { db } from './firebase';
 import Dashboard from './Dashboard';
 import './App.css';
@@ -106,9 +106,19 @@ function App() {
       setUser(u);
       if (unsubAprov) { unsubAprov(); unsubAprov = null; }
       if (!u) { setAprovado(false); setInitializing(false); return; }
-      // Escuta em tempo real: quando o admin aprovar, o painel destrava sozinho
-      unsubAprov = onValue(ref(db, `aprovacoes/${u.uid}/aprovado`), s => {
-        setAprovado(s.val() === true);
+      // Escuta o registro de aprovacao; se nao existir (cadastro antigo/resetado), cria a solicitacao
+      unsubAprov = onValue(ref(db, `aprovacoes/${u.uid}`), s => {
+        if (!s.exists()) {
+          get(ref(db, `empresas/${u.uid}`)).then(perf => {
+            return set(ref(db, `aprovacoes/${u.uid}`), {
+              tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
+              aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
+            });
+          }).catch(() => {});
+          setAprovado(false);
+        } else {
+          setAprovado(s.val().aprovado === true);
+        }
         setInitializing(false);
       }, () => { setAprovado(false); setInitializing(false); });
     });
