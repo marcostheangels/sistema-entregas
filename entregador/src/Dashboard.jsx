@@ -98,7 +98,7 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
       style: estiloMapaOsm,
       center: [-44.9328, -19.9369],
       zoom: 16,
-      pitch: 55,
+      pitch: 0,
       bearing: 0,
       attributionControl: false
     });
@@ -173,7 +173,7 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
     }
     markerMotoRef.current.setRotation(rumoRef.current);
     if (seguindoRef.current) {
-      map.easeTo({ center: [posicao.lng, posicao.lat], bearing: rumoRef.current, pitch: 55, duration: 900 });
+      map.easeTo({ center: [posicao.lng, posicao.lat], bearing: rumoRef.current, pitch: 0, duration: 900 });
     }
   }, [posicao, rumoRef]);
 
@@ -181,7 +181,7 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
     seguindoRef.current = true;
     setSeguindo(true);
     if (posicao && mapRef.current) {
-      mapRef.current.easeTo({ center: [posicao.lng, posicao.lat], bearing: rumoRef.current, pitch: 55, duration: 900 });
+      mapRef.current.easeTo({ center: [posicao.lng, posicao.lat], bearing: rumoRef.current, pitch: 0, duration: 900 });
     }
   };
 
