@@ -674,12 +674,21 @@ export default function Dashboard({ user }) {
                   className="btn-nav-action"
                   style={{background: 'var(--success)', color: '#fff', flex: 1.5}}
                   onClick={async () => {
-                    await update(ref(db, `entregas/${entregaEmRota.id}`), { status: 'entregue', entregueEm: Date.now() });
+                    const entregaId = entregaEmRota.id;
+                    await update(ref(db, `entregas/${entregaId}`), { status: 'entregue', entregueEm: Date.now() });
                     setEntregaEmRota(null);
                     setRotaInfo(null);
                     setMensagemNova(null);
                     setResposta('');
-                    lastMsgTs.current = 0;
+                    // Ignora mensagens antigas (nao reexibe popup com historico)
+                    lastMsgTs.current = Date.now();
+                    // Apaga o historico de mensagens desta entrega na hora
+                    try {
+                      const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(entregaId)));
+                      const updates = {};
+                      snap.forEach(c => { updates[c.key] = null; });
+                      if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
+                    } catch { /* sem permissao */ }
                   }}
                 >
                   FINALIZAR
