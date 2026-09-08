@@ -671,6 +671,7 @@ export default function Dashboard({ user }) {
 
   const watchId = useRef(null);
   const onlineRef = useRef(false);
+  const posicoesRef = useRef({});
   const blockedGlobalRef = useRef(false);
   const empresasBloqueadasRef = useRef({});
   const [mensagemNova, setMensagemNova] = useState(null);
