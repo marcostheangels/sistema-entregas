@@ -373,6 +373,18 @@ export default function Dashboard({ user }) {
     }
   }, [entregas]);
 
+  // Preenche o nome do entregador nas entregas antigas que ficaram sem (relatorio da empresa)
+  useEffect(() => {
+    if (!user.uid) return;
+    const semNome = entregas.filter(e => e.entregadorId === user.uid && !e.entregadorNome);
+    if (!semNome.length) return;
+    get(ref(db, `entregadores/${user.uid}`)).then(s => {
+      const nome = s.val()?.nome;
+      if (!nome) return;
+      semNome.forEach(e => update(ref(db, `entregas/${e.id}`), { entregadorNome: nome }).catch(() => {}));
+    }).catch(() => {});
+  }, [entregas, user.uid]);
+
   // Keepalive Web: mantem o GPS atualizando mesmo com a aba/janela em segundo plano
   const startKeepalive = () => {
     try {
@@ -611,11 +623,14 @@ export default function Dashboard({ user }) {
                     audioRef.current.currentTime = 0;
                   }
                   if (item.status === 'pendente') {
+                    // Pega o nome do perfil para gravar na entrega (relatorio da empresa)
+                    let nomeEntregador = '';
+                    try { const ps = await get(ref(db, `entregadores/${user.uid}`)); nomeEntregador = ps.val()?.nome || ''; } catch { /* segue sem nome */ }
                     // Transação: só um entregador consegue aceitar (evita corrida)
                     const result = await runTransaction(ref(db, `entregas/${item.id}`), (atual) => {
                       if (atual === null) return atual;
                       if (atual.status !== 'pendente') return; // Aborta: outro entregador já aceitou
-                      return { ...atual, status: 'aceite', entregadorId: user.uid, aceiteAt: Date.now() };
+                      return { ...atual, status: 'aceite', entregadorId: user.uid, entregadorNome: nomeEntregador, aceiteAt: Date.now() };
                     });
                     if (!result.committed) {
                       alert('Esta entrega já foi aceita por outro entregador.');
