@@ -113,6 +113,150 @@ function MensagemBox({ entregadorId, empresaId, empresaNome, entregas }) {
   );
 }
 
+// Chat flutuante: conversa com entregadores que estao em entrega ativa
+function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores }) {
+  const [aberto, setAberto] = useState(false);
+  const [conversas, setConversas] = useState({}); // entregadorId -> [msgs ordenadas]
+  const [ativo, setAtivo] = useState(null);
+  const [texto, setTexto] = useState('');
+  const [naoLidas, setNaoLidas] = useState({}); // entregadorId -> qtd nao lida
+  const contagemAnterior = useRef({});
+  const fimRef = useRef(null);
+
+  // Entregadores com entrega ativa (aceite/em_transito)
+  const ativos = useMemo(() => {
+    const ids = new Set(
+      entregas
+        .filter(e => ['aceite', 'em_transito'].includes(e.status) && e.entregadorId)
+        .map(e => e.entregadorId)
+    );
+    return [...ids];
+  }, [entregas]);
+
+  // Escuta todas as mensagens desta empresa e organiza por entregador
+  useEffect(() => {
+    if (!empresaId) return;
+    const q = query(ref(db, 'mensagens'), orderByChild('empresaId'), equalTo(empresaId));
+    return onValue(q, snap => {
+      const porEntregador = {};
+      snap.forEach(c => {
+        const m = { id: c.key, ...c.val() };
+        if (!m.entregadorId) return;
+        if (!porEntregador[m.entregadorId]) porEntregador[m.entregadorId] = [];
+        porEntregador[m.entregadorId].push(m);
+      });
+      Object.values(porEntregador).forEach(list => list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)));
+
+      const anterior = contagemAnterior.current;
+      const novasNaoLidas = { ...naoLidas };
+      let chegouResposta = false;
+      Object.entries(porEntregador).forEach(([eid, list]) => {
+        const qtdNova = list.length;
+        const qtdAnterior = anterior[eid] || 0;
+        if (qtdNova > qtdAnterior) {
+          const ultima = list[list.length - 1];
+          if (ultima.de === 'entregador') {
+            chegouResposta = true;
+            if (eid !== ativo || !aberto) novasNaoLidas[eid] = (novasNaoLidas[eid] || 0) + (qtdNova - qtdAnterior);
+          }
+        }
+      });
+      contagemAnterior.current = Object.fromEntries(Object.entries(porEntregador).map(([k, v]) => [k, v.length]));
+      setConversas(porEntregador);
+      if (chegouResposta) {
+        tocarChimeResposta();
+        setNaoLidas(novasNaoLidas);
+      }
+    });
+  }, [empresaId, ativo, aberto, naoLidas]);
+
+  // Ao abrir o chat, seleciona o primeiro entregador ativo com conversa
+  useEffect(() => {
+    if (aberto && !ativo) {
+      const candidato = ativos.find(id => conversas[id]) || ativos[0] || null;
+      if (candidato) setAtivo(candidato);
+    }
+  }, [aberto, ativos, conversas, ativo]);
+
+  // Limpa nao lidas do entregador selecionado quando o chat abre
+  useEffect(() => {
+    if (aberto && ativo) setNaoLidas(n => ({ ...n, [ativo]: 0 }));
+  }, [aberto, ativo, conversas]);
+
+  useEffect(() => {
+    if (aberto && fimRef.current) fimRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [aberto, ativo, conversas]);
+
+  const totalNaoLidas = Object.values(naoLidas).reduce((s, n) => s + n, 0);
+
+  const enviar = async () => {
+    const t = texto.trim();
+    if (!t || !ativo) return;
+    try {
+      await push(ref(db, 'mensagens'), {
+        empresaId, entregadorId: ativo, empresaNome,
+        texto: t.slice(0, 500), de: 'empresa', timestamp: Date.now()
+      });
+      setTexto('');
+    } catch { /* regra negou */ }
+  };
+
+  const nomeAtivo = ativo ? (entregadores[ativo]?.nome || 'Entregador') : '';
+  const msgsAtivas = ativo ? (conversas[ativo] || []) : [];
+
+  return (
+    <div className="chat-flutuante">
+      {aberto && (
+        <div className="chat-painel">
+          <div className="chat-header">
+            <div>
+              <div className="chat-titulo">💬 Chat com o Entregador</div>
+              <div className="chat-subtitulo">{ativo ? nomeAtivo : 'Nenhuma entrega ativa'}</div>
+            </div>
+            <button className="chat-fechar" onClick={() => setAberto(false)}>✕</button>
+          </div>
+
+          {ativos.length > 1 && (
+            <div className="chat-abas">
+              {ativos.map(id => (
+                <button key={id} className={`chat-aba ${id === ativo ? 'ativa' : ''}`} onClick={() => { setAtivo(id); setNaoLidas(n => ({ ...n, [id]: 0 })); }}>
+                  {(entregadores[id]?.nome || 'Entregador').split(' ')[0]}
+                  {naoLidas[id] > 0 && <span className="chat-badge-aba">{naoLidas[id]}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="chat-mensagens">
+            {!ativo && <div className="chat-vazio">O chat fica disponível durante uma entrega ativa (aceite ou em rota).</div>}
+            {ativo && msgsAtivas.length === 0 && <div className="chat-vazio">Nenhuma mensagem ainda. Diga algo ao entregador!</div>}
+            {ativo && msgsAtivas.map(m => (
+              <div key={m.id} className={`chat-msg ${m.de === 'empresa' ? 'minha' : 'dele'}`}>
+                <div className="chat-bolha">{m.texto}</div>
+                <div className="chat-hora">{m.timestamp ? new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+              </div>
+            ))}
+            <div ref={fimRef} />
+          </div>
+
+          {ativo && (
+            <div className="chat-input-linha">
+              <input value={texto} onChange={e => setTexto(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviar(); }}
+                placeholder="Mensagem ao entregador..." maxLength={500} />
+              <button onClick={enviar}>➤</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <button className="chat-fab" onClick={() => setAberto(a => !a)} title="Chat com entregadores">
+        {aberto ? '✕' : '💬'}
+        {!aberto && totalNaoLidas > 0 && <span className="chat-badge">{totalNaoLidas}</span>}
+      </button>
+    </div>
+  );
+}
+
 function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entregas, onBlockToggle }) {
   const mapRef = useRef(null);
   const centerMoc = [-16.7251, -43.8647];
@@ -208,27 +352,9 @@ export default function Dashboard({ user }) {
   const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '' });
   const [coords, setCoords] = useState({ origem: null, destino: null });
   const [statusFiltro, setStatusFiltro] = useState('pendente');
-  const [mensagemRecebida, setMensagemRecebida] = useState(null);
-  const lastReplyTs = useRef(Date.now());
 
   useEffect(() => {
     onValue(ref(db, `empresas/${user.uid}`), snap => setPerfil(snap.val()));
-    // Aviso de resposta do entregador (mensagens enviadas por ele)
-    const qRespostas = query(ref(db, 'mensagens'), orderByChild('empresaId'), equalTo(user.uid));
-    const unsubRespostas = onValue(qRespostas, snap => {
-      let maisNova = null;
-      snap.forEach(c => {
-        const m = c.val();
-        if (m.de === 'entregador' && m.timestamp > lastReplyTs.current && (!maisNova || m.timestamp > maisNova.timestamp)) {
-          maisNova = { id: c.key, ...m };
-        }
-      });
-      if (maisNova) {
-        lastReplyTs.current = maisNova.timestamp;
-        setMensagemRecebida(maisNova);
-        tocarChimeResposta();
-      }
-    });
     // Query indexada: só as entregas desta empresa (evita baixar o banco inteiro)
     const q = query(ref(db, 'entregas'), orderByChild('empresaId'), equalTo(user.uid));
     onValue(q, snap => {
@@ -237,7 +363,6 @@ export default function Dashboard({ user }) {
     });
     onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
     onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
-    return () => unsubRespostas();
   }, [user.uid]);
 
   const criarEntrega = async (e) => {
@@ -298,18 +423,7 @@ export default function Dashboard({ user }) {
         </div>
       </header>
 
-      {mensagemRecebida && (
-        <div style={{ background: '#fffbeb', border: '1px solid #f59e0b', padding: '14px 16px', borderRadius: '12px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.66rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#b45309', marginBottom: '3px' }}>
-              Resposta de {entregadores[mensagemRecebida.entregadorId]?.nome || 'Entregador'}
-            </div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#78350f' }}>{mensagemRecebida.texto}</div>
-            <div style={{ fontSize: '0.7rem', color: '#a16207', marginTop: '3px' }}>{new Date(mensagemRecebida.timestamp).toLocaleTimeString('pt-BR')}</div>
-          </div>
-          <button onClick={() => setMensagemRecebida(null)} style={{ background: '#f59e0b', color: 'white', border: 'none', padding: '8px 18px', borderRadius: '9px', fontWeight: 800, cursor: 'pointer', fontSize: '0.75rem', fontFamily: 'var(--font-display)', letterSpacing: '0.06em' }}>OK</button>
-        </div>
-      )}
+      <ChatFlutuante empresaId={user.uid} empresaNome={perfil?.nome || user.email} entregas={entregas} entregadores={entregadores} />
 
       <div className="stats-grid">
         <div className={`stat-card clickable ${statusFiltro === 'pendente' ? 'active' : ''}`} onClick={() => setStatusFiltro('pendente')}>
