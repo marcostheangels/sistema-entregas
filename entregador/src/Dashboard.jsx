@@ -438,7 +438,7 @@ export default function Dashboard({ user }) {
             <div className={`dot ${isOnline ? 'dot-online' : 'dot-offline'}`}></div>
             {isOnline ? 'ONLINE' : 'OFFLINE'}
           </button>
-          <button className="btn-icon-danger" onClick={() => signOut(auth)}><IconLogout /></button>
+          <button className="btn-icon-danger" onClick={() => { if (onlineRef.current) toggleTracking(false); signOut(auth); }}><IconLogout /></button>
         </div>
       </nav>
 

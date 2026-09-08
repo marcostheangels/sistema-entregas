@@ -137,10 +137,12 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, onBlock
         {Object.entries(posicoes).map(([id, pos]) => {
           if (id === currentUserId) return null;
           const info = entregadores[id] || {};
-          if (!pos.online) return null;
+          // So mostra quem esta ATIVO: marcado online E com posicao recente (ate 2 min)
+          const defasagem = Date.now() - (pos.timestamp || 0);
+          if (!pos.online || defasagem > 120000) return null;
           const isBloqueado = info.empresasBloqueadas && info.empresasBloqueadas[currentUserId];
           // Posicao com mais de 60s sem atualizacao = sinal perdido (entregador fechou o app ou ficou sem rede)
-          const semSinal = (Date.now() - (pos.timestamp || 0)) > 60000;
+          const semSinal = defasagem > 60000;
           return (
             <Marker key={id} position={[pos.lat, pos.lng]} icon={createIcon(info.nome || 'Entregador', pos.online, isBloqueado, semSinal)}>
               <Popup>
