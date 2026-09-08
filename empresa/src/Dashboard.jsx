@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ref, push, set, onValue, update, remove, query, orderByChild, equalTo } from 'firebase/database';
+import { ref, push, set, onValue, update, remove, get, query, orderByChild, equalTo } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
@@ -177,15 +177,28 @@ export default function Dashboard({ user }) {
   const criarEntrega = async (e) => {
     e.preventDefault();
     if (!coords.origem || !coords.destino) { alert('Selecione os endereços nas sugestões!'); return; }
+    // Garante que temos o perfil (mesmo que ainda nao tenha carregado)
+    let p = perfil;
+    if (!p?.nome) {
+      try { const s = await get(ref(db, `empresas/${user.uid}`)); p = s.val(); if (p) setPerfil(p); } catch { /* usa fallback */ }
+    }
     const novaRef = push(ref(db, 'entregas'));
     await set(novaRef, {
       ...form, empresaId: user.uid, status: 'pendente',
-      empresaNome: perfil?.nome || user.email,
-      empresaTelefone: perfil?.telefone || '',
+      empresaNome: p?.nome || user.email,
+      empresaTelefone: p?.telefone || '',
       createdAt: Date.now(), origemCoords: coords.origem, destinoCoords: coords.destino
     });
     setForm({ origem: '', destino: '', descricao: '', valor: '' });
     setCoords({ origem: null, destino: null });
+  };
+
+  const editarNomeEmpresa = async () => {
+    const nome = prompt('Nome da empresa (aparece para os entregadores):', perfil?.nome || '');
+    if (nome && nome.trim()) {
+      await update(ref(db, `empresas/${user.uid}`), { nome: nome.trim(), email: user.email });
+      setPerfil({ ...(perfil || {}), nome: nome.trim(), email: user.email });
+    }
   };
 
   const toggleBloqueio = (id, status) => {
@@ -209,7 +222,10 @@ export default function Dashboard({ user }) {
         </div>
         <div className="user-info">
           <div style={{textAlign: 'right'}}>
-            <div style={{fontSize: '0.9rem', fontWeight: 700}}>{perfil?.nome || 'Minha Empresa'}</div>
+            <div style={{fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px'}}>
+              {perfil?.nome || 'Minha Empresa'}
+              <button onClick={editarNomeEmpresa} title="Editar nome da empresa" style={{background:'none', border:'none', cursor:'pointer', fontSize:'0.85rem', opacity:0.7}}>✏️</button>
+            </div>
             <div style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>{user.email}</div>
           </div>
           <button onClick={() => signOut(auth)} className="btn-logout">SAIR</button>

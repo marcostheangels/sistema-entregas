@@ -78,7 +78,8 @@ const PermissionRow = ({ icon, name, desc, status, onAction }) => (
   </div>
 );
 
-const DeliveryCard = ({ entrega, posicao, onAction, actionLabel, actionColor }) => {
+const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actionColor }) => {
+  const nomeEmpresa = entrega.empresaNome || empresas[entrega.empresaId]?.nome || 'Estabelecimento';
   const distParaColeta = useMemo(() => {
     if (!posicao || !entrega.origemCoords) return null;
     const R = 6371; // Raio da Terra em km
@@ -109,7 +110,7 @@ const DeliveryCard = ({ entrega, posicao, onAction, actionLabel, actionColor }) 
           <div className="address-info">
           <span className="address-label">Retirada (Coleta)</span>
           <span className="address-value" style={{fontWeight: 800, color: 'var(--warning)', fontSize: '1.1rem', marginBottom: '2px'}}>
-            {entrega.empresaNome || 'Estabelecimento'}
+            {nomeEmpresa}
           </span>
           {entrega.empresaTelefone && (
             <span className="address-value" style={{fontSize: '0.9rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px'}}>
@@ -463,6 +464,7 @@ export default function Dashboard({ user }) {
                 key={e.id}
                 entrega={e}
                 posicao={posicao}
+                empresas={listaEmpresas}
                 onAction={async (item) => {
                   if (audioRef.current) {
                     audioRef.current.pause();
