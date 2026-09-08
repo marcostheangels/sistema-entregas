@@ -64,7 +64,43 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
   );
 }
 
-function MapaFrota({ entregadores, posicoes, currentUserId, onBlockToggle }) {
+function MensagemBox({ entregadorId, empresaId, empresaNome }) {
+  const [texto, setTexto] = useState('');
+  const [enviada, setEnviada] = useState(false);
+  const [erro, setErro] = useState('');
+
+  const enviar = async () => {
+    const t = texto.trim();
+    if (!t) return;
+    try {
+      await push(ref(db, 'mensagens'), {
+        empresaId, entregadorId, empresaNome,
+        texto: t.slice(0, 500), de: 'empresa', timestamp: Date.now()
+      });
+      setTexto('');
+      setEnviada(true);
+      setErro('');
+      setTimeout(() => setEnviada(false), 2500);
+    } catch (e) {
+      setErro('Erro ao enviar: ' + e.message);
+    }
+  };
+
+  return (
+    <div style={{marginTop:'10px', borderTop:'1px solid #eee', paddingTop:'8px'}}>
+      <div style={{display:'flex', gap:'5px'}}>
+        <input value={texto} onChange={e=>setTexto(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') enviar(); }}
+          placeholder="Mensagem ao entregador..." maxLength={500}
+          style={{flex:1, padding:'6px 8px', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.8rem'}} />
+        <button onClick={enviar} style={{padding:'6px 10px', borderRadius:'6px', border:'none', background:'var(--primary)', color:'white', fontWeight:700, cursor:'pointer', fontSize:'0.75rem'}}>ENVIAR</button>
+      </div>
+      {enviada && <div style={{fontSize:'0.7rem', color:'var(--success)', marginTop:'4px', fontWeight:700}}>Mensagem enviada ao entregador!</div>}
+      {erro && <div style={{fontSize:'0.7rem', color:'var(--danger)', marginTop:'4px'}}>{erro}</div>}
+    </div>
+  );
+}
+
+function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, onBlockToggle }) {
   const mapRef = useRef(null);
   const centerMoc = [-16.7251, -43.8647];
 
@@ -106,6 +142,7 @@ function MapaFrota({ entregadores, posicoes, currentUserId, onBlockToggle }) {
                   <button onClick={() => onBlockToggle(id, !isBloqueado)} style={{width: '100%', marginTop: '10px', padding: '8px', borderRadius: '5px', border: 'none', background: isBloqueado ? 'var(--success)' : '#334155', color: 'white', fontWeight: 700, cursor: 'pointer'}}>
                     {isBloqueado ? '✅ LIBERAR' : '🚫 BLOQUEAR'}
                   </button>
+                  <MensagemBox entregadorId={id} empresaId={currentUserId} empresaNome={empresaNome} />
                 </div>
               </Popup>
             </Marker>
@@ -200,7 +237,7 @@ export default function Dashboard({ user }) {
 
       <div className="main-content">
         <div className="column-left">
-          <MapaFrota entregadores={entregadores} posicoes={posicoes} currentUserId={user.uid} onBlockToggle={toggleBloqueio} />
+          <MapaFrota entregadores={entregadores} posicoes={posicoes} currentUserId={user.uid} empresaNome={perfil?.nome || user.email} onBlockToggle={toggleBloqueio} />
 
           <div className="section-title">
             <span>📦</span> Listagem de Pedidos ({statusFiltro.toUpperCase()})

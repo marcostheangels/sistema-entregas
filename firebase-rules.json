@@ -1,6 +1,7 @@
 {
   "rules": {
     "empresas": {
+      ".read": "auth != null",
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid"
@@ -39,6 +40,20 @@
         "timestamp": { ".validate": "newData.isNumber()" },
         "online": { ".validate": "newData.isBoolean()" },
         "source": { ".validate": true },
+        "$other": { ".validate": false }
+      }
+    },
+    "mensagens": {
+      ".read": "auth != null",
+      ".indexOn": ["entregadorId", "empresaId"],
+      "$id": {
+        ".write": "auth != null && (newData.child('empresaId').val() === auth.uid || newData.child('entregadorId').val() === auth.uid)",
+        "empresaId": { ".validate": "newData.isString()" },
+        "entregadorId": { ".validate": "newData.isString()" },
+        "texto": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
+        "de": { ".validate": "newData.val() === 'empresa' || newData.val() === 'entregador'" },
+        "empresaNome": { ".validate": true },
+        "timestamp": { ".validate": "newData.isNumber()" },
         "$other": { ".validate": false }
       }
     }

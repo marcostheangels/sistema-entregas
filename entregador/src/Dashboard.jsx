@@ -173,6 +173,9 @@ export default function Dashboard({ user }) {
   const onlineRef = useRef(false);
   const blockedGlobalRef = useRef(false);
   const empresasBloqueadasRef = useRef({});
+  const [mensagemNova, setMensagemNova] = useState(null);
+  const lastMsgTs = useRef(Date.now());
+  const msgAudioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3'));
 
   const addLog = (msg) => {
     setDebugLog(prev => [new Date().toLocaleTimeString() + ': ' + msg, ...prev.slice(0, 9)]);
@@ -204,6 +207,27 @@ export default function Dashboard({ user }) {
       if (isBlocked && onlineRef.current) {
         toggleTracking(false);
         addLog('⚠️ SUA CONTA FOI SUSPENSA DO SISTEMA');
+      }
+    });
+    return unsub;
+  }, [user.uid]);
+
+  // Mensagens da empresa (recebidas em tempo real)
+  useEffect(() => {
+    const qMsgs = query(ref(db, 'mensagens'), orderByChild('entregadorId'), equalTo(user.uid));
+    const unsub = onValue(qMsgs, (snap) => {
+      let maisNova = null;
+      snap.forEach(c => {
+        const m = c.val();
+        if (m.de === 'empresa' && m.timestamp > lastMsgTs.current && (!maisNova || m.timestamp > maisNova.timestamp)) {
+          maisNova = { id: c.key, ...m };
+        }
+      });
+      if (maisNova) {
+        lastMsgTs.current = maisNova.timestamp;
+        setMensagemNova(maisNova);
+        msgAudioRef.current.play().catch(() => {});
+        addLog('Mensagem da empresa: ' + maisNova.texto);
       }
     });
     return unsub;
@@ -414,6 +438,19 @@ export default function Dashboard({ user }) {
               return <span key={id} style={{textTransform:'uppercase', background:'#f59e0b', color:'white', padding:'2px 6px', borderRadius:'4px', margin:'2px', display:'inline-block'}}>{emp?.nome || 'Empresa'}</span>
             })}
             <div style={{marginTop: '5px', fontSize: '0.75rem', fontWeight: 500}}>Você não receberá pedidos dessas empresas.</div>
+          </div>
+        )}
+
+        {mensagemNova && (
+          <div style={{ background: '#eef2ff', border: '1px solid #6366f1', color: '#312e81', padding: '14px', borderRadius: '12px', marginBottom: '15px' }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '4px' }}>
+              Mensagem de {mensagemNova.empresaNome || 'Empresa'}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{mensagemNova.texto}</div>
+            <div style={{ fontSize: '0.7rem', opacity: 0.7, marginTop: '4px' }}>{new Date(mensagemNova.timestamp).toLocaleTimeString('pt-BR')}</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button onClick={() => setMensagemNova(null)} style={{ background: '#6366f1', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 700, cursor: 'pointer', fontSize: '0.8rem' }}>OK</button>
+            </div>
           </div>
         )}
 
