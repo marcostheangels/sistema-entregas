@@ -646,7 +646,7 @@ const tocarChimeMensagem = () => {
 export default function Dashboard({ user }) {
   const [entregas, setEntregas] = useState([]);
   const [statusFiltro, setStatusFiltro] = useState('disponivel');
-  const lastEntregasCount = useRef(0);
+  const entregasVistasRef = useRef(new Set());
   const audioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3'));
   const [posicao, setPosicao] = useState(null);
   const [entregaEmRota, setEntregaEmRota] = useState(null);
@@ -754,6 +754,46 @@ export default function Dashboard({ user }) {
     return map;
   };
 
+  // Despacho inteligente: alarme apenas para entregadores LIVRES.
+  // Se todos os online estiverem ocupados, toca para todos.
+  // Detecta entregas NOVAS por ID (nao por contagem), entao funciona mesmo
+  // depois de o app ficar congelado em segundo plano.
+  const avaliarDespacho = () => {
+    const pendentesVisiveis = Object.keys(entregasStore.current.pendentes || {}).filter(id => {
+      if (blockedGlobalRef.current) return false;
+      const e = entregasStore.current.pendentes[id];
+      if (empresasBloqueadasRef.current[e.empresaId]) return false;
+      return true;
+    });
+    const novasEntregas = pendentesVisiveis.filter(id => !entregasVistasRef.current.has(id));
+
+    const souOcupado = Object.values(entregasStore.current.minhas || {}).some(e => e.status === 'aceite' || e.status === 'em_transito');
+    const ocupados = new Set(
+      [...Object.values(entregasStore.current.aceite || {}), ...Object.values(entregasStore.current.transito || {})]
+        .map(e => e.entregadorId).filter(Boolean)
+    );
+    const agoraTs = Date.now();
+    const livresOnline = Object.entries(posicoesRef.current).filter(([id, p]) =>
+      id !== user.uid && p.online && agoraTs - (p.timestamp || 0) < 120000 && !ocupados.has(id)
+    ).length;
+    const devoTocar = onlineRef.current && novasEntregas.length > 0 && (!souOcupado || livresOnline === 0);
+
+    if (devoTocar) {
+      addLog(souOcupado ? '🔔 Todos ocupados! Nova entrega para você também!' : '🔔 Nova entrega disponível!');
+      if (audioRef.current) {
+        audioRef.current.loop = true;
+        audioRef.current.play().catch(e => addLog('Erro áudio: ' + e.message));
+      }
+      novasEntregas.forEach(id => entregasVistasRef.current.add(id));
+    }
+
+    // Se não houver mais entregas pendentes VISÍVEIS, para a "chamada"
+    if (pendentesVisiveis.length === 0 && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  };
+
   useEffect(() => {
     // Queries indexadas: só entregas pendentes + só as minhas (evita baixar o banco inteiro)
     const qPendentes = query(ref(db, 'entregas'), orderByChild('status'), equalTo('pendente'));
@@ -764,46 +804,8 @@ export default function Dashboard({ user }) {
     const unsubPosicoes = onValue(ref(db, 'posicoes'), snap => { posicoesRef.current = snap.val() || {}; });
 
     const unsubPendentes = onValue(qPendentes, (snap) => {
-      const data = snapToMap(snap);
-      entregasStore.current.pendentes = data;
-
-      // Lógica de Som para Nova Entrega (Filtrada por bloqueios)
-      const pendentesVisiveis = Object.keys(data).filter(id => {
-          if (blockedGlobalRef.current) return false;
-          const e = data[id];
-          if (empresasBloqueadasRef.current[e.empresaId]) return false;
-          return true;
-      });
-
-      // Despacho inteligente: alarme apenas para entregadores LIVRES.
-      // Se todos os online estiverem ocupados, toca para todos.
-      const souOcupado = Object.values(entregasStore.current.minhas || {}).some(e => e.status === 'aceite' || e.status === 'em_transito');
-      const ocupados = new Set(
-        [...Object.values(entregasStore.current.aceite || {}), ...Object.values(entregasStore.current.transito || {})]
-          .map(e => e.entregadorId).filter(Boolean)
-      );
-      const agoraTs = Date.now();
-      const livresOnline = Object.entries(posicoesRef.current).filter(([id, p]) =>
-        id !== user.uid && p.online && agoraTs - (p.timestamp || 0) < 120000 && !ocupados.has(id)
-      ).length;
-      const devoTocar = onlineRef.current && pendentesVisiveis.length > lastEntregasCount.current &&
-        (!souOcupado || livresOnline === 0);
-
-      if (devoTocar) {
-        addLog(souOcupado ? '🔔 Todos ocupados! Nova entrega para você também!' : '🔔 Nova entrega disponível!');
-        if (audioRef.current) {
-          audioRef.current.loop = true;
-          audioRef.current.play().catch(e => addLog('Erro áudio: ' + e.message));
-        }
-      }
-
-      // Se não houver mais entregas pendentes VISÍVEIS, para a "chamada"
-      if (pendentesVisiveis.length === 0 && audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-
-      lastEntregasCount.current = pendentesVisiveis.length;
+      entregasStore.current.pendentes = snapToMap(snap);
+      avaliarDespacho();
       combinarEntregas();
     });
     const unsubMinhas = onValue(qMinhas, (snap) => {
@@ -891,10 +893,15 @@ export default function Dashboard({ user }) {
   // Re-adquire o Wake Lock quando o app volta para a frente
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === 'visible' && onlineRef.current) requestWakeLock();
+      if (document.visibilityState === 'visible' && onlineRef.current) {
+        requestWakeLock();
+        // App voltou do segundo plano: reavalia entregas pendentes nao vistas
+        avaliarDespacho();
+      }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleTracking = (status) => {
@@ -934,7 +941,7 @@ export default function Dashboard({ user }) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
       }
-      lastEntregasCount.current = 0;
+      entregasVistasRef.current = new Set();
       backgroundLocation.stopService().catch(() => {});
       stopKeepalive();
       try { wakeLockRef.current?.release?.(); } catch { /* ja liberado */ }
