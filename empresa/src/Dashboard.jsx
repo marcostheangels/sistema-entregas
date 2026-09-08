@@ -32,7 +32,7 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
     if (q.length < 3) { setSugestoes([]); return; }
     const bbox = '-44.2,-17.2,-43.5,-16.3'; // regiao de Montes Claros/MG
     try {
-      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&bbox=${bbox}&limit=6&lang=pt`);
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&bbox=${bbox}&limit=6`);
       const data = await res.json();
       const lista = (data.features || []).map(f => ({
         coords: { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] },
@@ -42,8 +42,7 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
     } catch { /* cai no fallback */ }
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)},+Montes+Claros,+MG,+Brasil&format=json&limit=5&addressdetails=1`,
-        { headers: { 'User-Agent': 'SistemaEntregas/1.0' } }
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)},+Montes+Claros,+MG,+Brasil&format=json&limit=5&addressdetails=1`
       );
       const data = await res.json();
       setSugestoes(data.map(s => ({
