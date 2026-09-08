@@ -8,16 +8,7 @@ import android.content.SharedPreferences;
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction()) || 
-            "android.intent.action.QUICKBOOT_POWERON".equals(intent.getAction()) ||
-            "CHECK_SERVICE".equals(intent.getAction())) {
-            
-            SharedPreferences prefs = context.getSharedPreferences("EntregadorPrefs", Context.MODE_PRIVATE);
-            String userId = prefs.getString("userId", "");
-            
-            if (!userId.isEmpty()) {
-                LocationService.start(context, userId);
-            }
-        }
+        // O rastreamento NAO reinicia sozinho: o entregador precisa abrir o app e ficar online.
+        // Regra de negocio: app fechado = entregador nao aparece no mapa da empresa.
     }
 }

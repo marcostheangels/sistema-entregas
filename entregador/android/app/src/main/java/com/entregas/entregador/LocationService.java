@@ -109,6 +109,8 @@ public class LocationService extends Service {
             }
         };
 
+        startPolling();
+
         SharedPreferences prefs = getSharedPreferences("EntregadorPrefs", MODE_PRIVATE);
         userId = prefs.getString("userId", "");
         
@@ -164,7 +166,28 @@ public class LocationService extends Service {
         try {
             fusedLocationClient.removeLocationUpdates(locationCallback);
             fusedLocationClient.requestLocationUpdates(req, locationCallback, serviceThread.getLooper());
-        } catch (SecurityException ignored) {}
+        } catch (SecurityException e) {
+            Log.e(TAG, "Sem permissao de localizacao para o FGS: " + e.getMessage());
+        }
+    }
+
+    // Plano B: alguns fabricantes suspensam os callbacks do FusedLocation em segundo plano.
+    // A cada 10s forca uma leitura da ultima posicao conhecida e envia ao Firebase.
+    private void startPolling() {
+        heartbeatHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    fusedLocationClient.getLastLocation().addOnSuccessListener(location -> {
+                        if (location != null && userId != null && !userId.isEmpty()) {
+                            Log.d(TAG, "Polling fallback: enviando ultima posicao");
+                            sync(location.getLatitude(), location.getLongitude());
+                        }
+                    });
+                } catch (SecurityException ignored) {}
+                heartbeatHandler.postDelayed(this, 10000);
+            }
+        }, 10000);
     }
 
     private void sync(double lat, double lng) {
@@ -215,7 +238,29 @@ public class LocationService extends Service {
     }
 
     @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // Entregador fechou o app (arrastou para fora): encerra o rastreamento e marca offline
+        Log.d(TAG, "Task removida: encerrando rastreamento e marcando offline");
+        goOffline();
+        stopForeground(true);
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
+    private void goOffline() {
+        try {
+            if (userId != null && !userId.isEmpty()) {
+                Map<String, Object> data = new HashMap<>();
+                data.put("online", false);
+                data.put("timestamp", System.currentTimeMillis());
+                databaseReference.child("posicoes").child(userId).updateChildren(data);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @Override
     public void onDestroy() {
+        goOffline();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
         fusedLocationClient.removeLocationUpdates(locationCallback);

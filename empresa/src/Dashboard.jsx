@@ -103,13 +103,20 @@ function MensagemBox({ entregadorId, empresaId, empresaNome }) {
 function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, onBlockToggle }) {
   const mapRef = useRef(null);
   const centerMoc = [-16.7251, -43.8647];
+  const [, setTick] = useState(0);
 
-  const createIcon = (nome, online, bloqueado) => {
-    const color = bloqueado ? '#64748b' : (online ? '#10b981' : '#94a3b8');
+  // Reavalia o "sem sinal" periodicamente, mesmo sem mudanca nos dados
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const createIcon = (nome, online, bloqueado, semSinal) => {
+    const color = bloqueado ? '#64748b' : (semSinal ? '#f59e0b' : (online ? '#10b981' : '#94a3b8'));
     return L.divIcon({
       html: `<div style="display:flex; flex-direction:column; align-items:center;">
               <div style="background:white; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:800; border:1px solid #333; white-space:nowrap; margin-bottom:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2)">
-                ${nome.split(' ')[0]} ${bloqueado ? '🚫' : ''}
+                ${nome.split(' ')[0]} ${bloqueado ? '🚫' : ''}${semSinal ? '⏸' : ''}
               </div>
               <div style="background:${color}; width:32px; height:32px; border-radius:50%; border:3px solid white; box-shadow:0 4px 6px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M19,10c0-1.1-0.9-2-2-2h-3l-2-2h-3l-2,2H4 c-1.1,0-2,0.9-2,2v3c0,1.1,0.9,2,2,2h0.1c0.5,1.7,2,3,3.9,3s3.4-1.3,3.9-3h4.2c0.5,1.7,2,3,3.9,3s3.4-1.3,3.9-3H22v-3 C22,10.9,21.1,10,19,10z"/></svg>
@@ -132,13 +139,18 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, onBlock
           const info = entregadores[id] || {};
           if (!pos.online) return null;
           const isBloqueado = info.empresasBloqueadas && info.empresasBloqueadas[currentUserId];
+          // Posicao com mais de 60s sem atualizacao = sinal perdido (entregador fechou o app ou ficou sem rede)
+          const semSinal = (Date.now() - (pos.timestamp || 0)) > 60000;
           return (
-            <Marker key={id} position={[pos.lat, pos.lng]} icon={createIcon(info.nome || 'Entregador', pos.online, isBloqueado)}>
+            <Marker key={id} position={[pos.lat, pos.lng]} icon={createIcon(info.nome || 'Entregador', pos.online, isBloqueado, semSinal)}>
               <Popup>
                 <div style={{textAlign:'center', minWidth: '200px'}}>
                   <h4 style={{margin: '0 0 5px 0'}}>{info.nome}</h4>
                   <p style={{margin: '0', fontSize: '0.85rem', color: 'var(--success)', fontWeight: 700}}>📞 {info.telefone}</p>
                   <p style={{margin: '5px 0', fontSize: '0.8rem'}}>🛵 {info.veiculo} | {info.placa}</p>
+                  <p style={{margin: '5px 0', fontSize: '0.75rem', color: semSinal ? '#b45309' : 'var(--text-muted)', fontWeight: semSinal ? 700 : 400}}>
+                    Última atualização: {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '--'}{semSinal ? ' (sem sinal novo)' : ''}
+                  </p>
                   <button onClick={() => onBlockToggle(id, !isBloqueado)} style={{width: '100%', marginTop: '10px', padding: '8px', borderRadius: '5px', border: 'none', background: isBloqueado ? 'var(--success)' : '#334155', color: 'white', fontWeight: 700, cursor: 'pointer'}}>
                     {isBloqueado ? '✅ LIBERAR' : '🚫 BLOQUEAR'}
                   </button>

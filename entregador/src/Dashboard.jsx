@@ -177,6 +177,8 @@ export default function Dashboard({ user }) {
   const [mensagemNova, setMensagemNova] = useState(null);
   const lastMsgTs = useRef(Date.now());
   const msgAudioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3'));
+  const workerRef = useRef(null);
+  const wakeLockRef = useRef(null);
 
   const addLog = (msg) => {
     setDebugLog(prev => [new Date().toLocaleTimeString() + ': ' + msg, ...prev.slice(0, 9)]);
@@ -294,6 +296,48 @@ export default function Dashboard({ user }) {
     return () => { unsubPendentes(); unsubMinhas(); };
   }, [user.uid]);
 
+  // Keepalive Web: mantem o GPS atualizando mesmo com a aba/janela em segundo plano
+  const startKeepalive = () => {
+    try {
+      const code = "setInterval(function(){ postMessage('tick'); }, 15000);";
+      const blob = new Blob([code], { type: 'application/javascript' });
+      const w = new Worker(URL.createObjectURL(blob));
+      w.onmessage = () => {
+        if (!onlineRef.current) return;
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: Date.now() };
+            update(ref(db, `posicoes/${user.uid}`), { ...p, online: true, source: 'keepalive_web' });
+          },
+          () => {},
+          { enableHighAccuracy: true }
+        );
+      };
+      workerRef.current = w;
+    } catch (e) {
+      addLog('Keepalive web indisponivel: ' + e.message);
+    }
+  };
+
+  const stopKeepalive = () => {
+    if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; }
+  };
+
+  const requestWakeLock = async () => {
+    try {
+      wakeLockRef.current = await navigator.wakeLock?.request('screen');
+    } catch { /* navegador sem suporte */ }
+  };
+
+  // Re-adquire o Wake Lock quando o app volta para a frente
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && onlineRef.current) requestWakeLock();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
   const toggleTracking = (status) => {
     // Sênior: Liberado para ficar online sem travas administrativas globais
     setIsOnline(status);
@@ -309,7 +353,12 @@ export default function Dashboard({ user }) {
 
     if (status) {
       addLog('Ficando Online...');
-      backgroundLocation.startService(user.uid);
+      // Servico nativo (APK): rastreamento em segundo plano via notificacao fixa
+      backgroundLocation.startService(user.uid)
+        .then(() => addLog('Rastreamento nativo em segundo plano ATIVO'))
+        .catch((e) => addLog('Servico background falhou: ' + (e?.message || e)));
+      startKeepalive();
+      requestWakeLock();
       watchId.current = navigator.geolocation.watchPosition(
         (pos) => {
           const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: Date.now() };
@@ -321,7 +370,9 @@ export default function Dashboard({ user }) {
       );
     } else {
       addLog('Ficando Offline...');
-      backgroundLocation.stopService();
+      backgroundLocation.stopService().catch(() => {});
+      stopKeepalive();
+      try { wakeLockRef.current?.release?.(); } catch { /* ja liberado */ }
       if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
       update(ref(db, `posicoes/${user.uid}`), { online: false });
     }
