@@ -1,7 +1,14 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 12:50
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 14:20
+
+## 🔐 Recuperação de senha + versão visível + mapa do Master (09/09/2026)
+- **Recuperação de senha** ("Esqueci minha senha") no login do entregador (`entregador/src/Auth.jsx`) e da empresa (`empresa/src/App.jsx`) via `sendPasswordResetEmail` — chega por e-mail com link para criar nova senha
+- **Versão do app visível no APK do entregador** (rodapé do login e da tela de análise) — `APP_VERSAO` agora `1.3.0`
+- **Painel Master mostra a versão atual do APK** no card "📱 App do entregador — v1.3.0 (atual)" (constante `APP_VERSAO_ENTREGADOR` no topo de `admin/src/App.jsx` — atualizar junto com o app)
+- **Mapa em tempo real no Master**: card "🗺️ Mapa em tempo real" logo abaixo dos indicadores — mostra TODOS os entregadores online (🛵) e os com pedido (🛵📦) + relatório lateral com nome, telefone, veículo/placa e de qual empresa é o pedido em andamento. Dados: `posicoes` (online < 2 min) cruzado com `entregas` em andamento
+- APK regenerado (docs/apk + raiz), 3 apps publicados no Pages. Dica: para o e-mail de reset ficar em PT-BR, ajuste o template em Firebase Console > Authentication > Templates
 
 ## 📱 Atualização obrigatória do app (sem Play Store) (09/09/2026)
-- App do entregador tem constante `APP_VERSAO` (hoje `1.1.0`) em `entregador/src/App.jsx` — **aumentar a cada release**
+- App do entregador tem constante `APP_VERSAO` (hoje `1.3.0`) em `entregador/src/App.jsx` — **aumentar a cada release**
 - Master define "Versão mínima" no painel (`config/versaoMinima.app`): app antigo mostra tela de bloqueio com botão que baixa o APK novo direto de `https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk`
 - APK público fica em `docs/apk/App-Entregador.apk` (exceção no .gitignore) — **copiar o APK novo para lá a cada release antes do push**
 - Fluxo de release do entregador: bump APP_VERSAO → build APK → copiar p/ raiz e docs/apk/ → push → (opcional) subir versão mínima no Master

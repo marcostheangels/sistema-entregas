@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import { ref, set } from 'firebase/database';
 import { auth, db } from './firebase';
 
-export default function Auth({ onAuth }) {
+export default function Auth({ onAuth, versao }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [msgRecuperacao, setMsgRecuperacao] = useState('');
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [cpf, setCpf] = useState('');
@@ -26,6 +27,19 @@ export default function Auth({ onAuth }) {
 
   const formatarPlaca = (valor) => {
     return valor.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
+  };
+
+  const enviarRecuperacao = async () => {
+    setMsgRecuperacao('');
+    if (!email.trim()) { setMsgRecuperacao('⚠️ Digite seu e-mail acima primeiro.'); return; }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setMsgRecuperacao('📧 Link de redefinição enviado! Abra o e-mail (veja também o spam) e crie uma nova senha.');
+    } catch (err) {
+      setMsgRecuperacao(err.code === 'auth/user-not-found'
+        ? 'Nenhuma conta encontrada com este e-mail.'
+        : 'Erro ao enviar: ' + err.message);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -241,10 +255,24 @@ export default function Auth({ onAuth }) {
           </div>
 
           {error && <div className="error" style={{fontSize: '0.8rem', marginBottom: 10}}>{error}</div>}
+          {isLogin && msgRecuperacao && (
+            <div style={{fontSize: '0.78rem', marginBottom: 10, color: '#34d399', lineHeight: 1.4}}>{msgRecuperacao}</div>
+          )}
 
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? 'Processando...' : (isLogin ? 'ENTRAR AGORA' : 'CRIAR MINHA CONTA')}
           </button>
+
+          {isLogin && (
+            <button
+              type="button"
+              onClick={enviarRecuperacao}
+              style={{background: 'transparent', border: 'none', color: '#818cf8', fontSize: '0.8rem',
+                      fontWeight: 600, cursor: 'pointer', marginTop: 12, width: '100%'}}
+            >
+              Esqueci minha senha
+            </button>
+          )}
         </form>
 
         <div className="auth-toggle">
@@ -253,6 +281,12 @@ export default function Auth({ onAuth }) {
             {isLogin ? 'Cadastre-se' : 'Faça Login'}
           </span>
         </div>
+
+        {versao && (
+          <div style={{textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 14}}>
+            ConectaEntregas Entregador · v{versao}
+          </div>
+        )}
       </div>
     </div>
   );

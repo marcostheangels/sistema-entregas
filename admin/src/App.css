@@ -292,3 +292,54 @@ body {
 }
 .admin-dado-chave { color: #94a3b8; min-width: 110px; font-weight: 700; text-transform: capitalize; }
 .admin-dado-valor { color: #e2e8f0; word-break: break-word; }
+
+/* Mapa + relatorio em tempo real dos entregadores */
+.admin-mapa-section {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.admin-mapa-section h4 { font-size: 0.95rem; margin-bottom: 12px; }
+.admin-mapa-flex { display: flex; gap: 14px; align-items: stretch; }
+.admin-mapa {
+  flex: 1.6;
+  min-width: 0;
+  height: 340px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0f172a;
+  z-index: 0;
+}
+.admin-relatorio {
+  flex: 1;
+  min-width: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-rel-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.rel-ponto { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.rel-ponto.livre { background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.7); }
+.rel-ponto.ocupado { background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.7); }
+.rel-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rel-info strong { font-size: 0.85rem; }
+.rel-info small { font-size: 0.72rem; color: #94a3b8; }
+.rel-status.ocupado { color: #fbbf24; }
+.rel-status.livre { color: #34d399; }
+@media (max-width: 720px) {
+  .admin-mapa-flex { flex-direction: column; }
+  .admin-mapa { height: 260px; }
+  .admin-relatorio { max-height: 260px; }
+}

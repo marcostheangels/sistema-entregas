@@ -7,7 +7,7 @@ import Dashboard from './Dashboard';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.2.0';
+export const APP_VERSAO = '1.3.0';
 const URL_APK = 'https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk';
 
 // Compara "1.2.3" com "1.10.0" corretamente
@@ -56,7 +56,7 @@ function AtualizacaoObrigatoria({ atual, minima }) {
   );
 }
 
-function AguardandoAprovacao({ user }) {
+function AguardandoAprovacao({ user, versao }) {
   return (
     <div className="auth-wrapper">
       <div className="auth-card animate-fade" style={{textAlign: 'center'}}>
@@ -77,6 +77,11 @@ function AguardandoAprovacao({ user }) {
         >
           SAIR
         </button>
+        {versao && (
+          <div style={{textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 14}}>
+            ConectaEntregas Entregador · v{versao}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -232,11 +237,11 @@ function App() {
 
   if (user && versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
 
-  if (user && aprovado === false) return <AguardandoAprovacao user={user} />;
+  if (user && aprovado === false) return <AguardandoAprovacao user={user} versao={APP_VERSAO} />;
 
   if (user && !perfilCarregando && !temPerfil) return <CompletarCadastro user={user} dados={dadosAprov} />;
 
-  return user ? <Dashboard user={user} /> : <Auth onAuth={setUser} />;
+  return user ? <Dashboard user={user} /> : <Auth onAuth={setUser} versao={APP_VERSAO} />;
 }
 
 export default App;

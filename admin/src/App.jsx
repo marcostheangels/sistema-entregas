@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { ref, get, set, onValue, update, remove, query, orderByChild } from 'firebase/database';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { auth, db } from './firebase';
 
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
+// Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
+const APP_VERSAO_ENTREGADOR = '1.3.0';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -63,6 +67,90 @@ function LoginScreen() {
           <button type="submit" disabled={loading}>{loading ? 'Processando...' : 'ENTRAR'}</button>
         </form>
         {error && <div className="admin-error">{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ===== MAPA + RELATORIO EM TEMPO REAL DOS ENTREGADORES (somente admin) =====
+function MapaTempoReal({ posicoes, entregas, entregadores }) {
+  const divRef = useRef(null);
+  const mapRef = useRef(null);
+  const marcadoresRef = useRef({});
+  const centralizadoRef = useRef(false);
+
+  const agora = Date.now();
+  const ativos = Object.entries(posicoes || {})
+    .filter(([, p]) => p && p.online && agora - (p.timestamp || 0) < 120000 && typeof p.lat === 'number' && typeof p.lng === 'number')
+    .map(([id, p]) => ({
+      id, p,
+      perfil: entregadores[id] || {},
+      entrega: entregas.find(e => e.entregadorId === id && (e.status === 'aceite' || e.status === 'em_transito')) || null
+    }));
+
+  useEffect(() => {
+    if (mapRef.current || !divRef.current) return;
+    const map = L.map(divRef.current, { attributionControl: false });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    map.setView([-16.735, -43.862], 12);
+    mapRef.current = map;
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      marcadoresRef.current = {};
+      centralizadoRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const ids = new Set(ativos.map(a => a.id));
+    Object.entries(marcadoresRef.current).forEach(([id, m]) => {
+      if (!ids.has(id)) { m.remove(); delete marcadoresRef.current[id]; }
+    });
+    ativos.forEach(a => {
+      const html = `<div style="font-size:26px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))">${a.entrega ? '🛵📦' : '🛵'}</div>`;
+      const icone = L.divIcon({ html, className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
+      const popup = `<b>${a.perfil.nome || 'Entregador'}</b><br/>📞 ${a.perfil.telefone || '—'}<br/>🛵 ${a.perfil.veiculo || '—'}${a.perfil.placa ? ' · ' + a.perfil.placa : ''}<br/><b>${a.entrega ? `📦 Pedido para ${a.entrega.empresaNome || 'Empresa'}` : '🟢 Livre — aguardando pedido'}</b>${a.entrega?.destino ? `<br/>📍 ${a.entrega.destino}` : ''}`;
+      const existente = marcadoresRef.current[a.id];
+      if (existente) {
+        existente.setLatLng([a.p.lat, a.p.lng]);
+        existente.setIcon(icone);
+        existente.setPopupContent(popup);
+      } else {
+        marcadoresRef.current[a.id] = L.marker([a.p.lat, a.p.lng], { icon: icone }).addTo(map).bindPopup(popup);
+      }
+    });
+    // Centraliza so uma vez (no primeiro entregador detectado) sem perseguir o mapa
+    if (!centralizadoRef.current && ativos.length > 0) {
+      centralizadoRef.current = true;
+      map.setView([ativos[0].p.lat, ativos[0].p.lng], 13);
+    }
+  });
+
+  return (
+    <div className="admin-mapa-section">
+      <h4>🗺️ Mapa em tempo real — {ativos.length} entregador(es) online</h4>
+      <div className="admin-mapa-flex">
+        <div ref={divRef} className="admin-mapa" />
+        <div className="admin-relatorio">
+          {ativos.length === 0 && <div className="admin-vazio">Nenhum entregador online agora.</div>}
+          {ativos.map(a => (
+            <div key={a.id} className="admin-rel-item">
+              <span className={`rel-ponto ${a.entrega ? 'ocupado' : 'livre'}`} />
+              <div className="rel-info">
+                <strong>{a.perfil.nome || 'Entregador'}</strong>
+                <small>📞 {a.perfil.telefone || '—'} · 🛵 {a.perfil.veiculo || '—'}{a.perfil.placa ? ` · ${a.perfil.placa}` : ''}</small>
+                {a.entrega ? (
+                  <small className="rel-status ocupado">📦 Pedido #{a.entrega.codigo || a.entrega.id || '—'} — {a.entrega.empresaNome || 'Empresa'} → {a.entrega.destino || 'entrega'}</small>
+                ) : (
+                  <small className="rel-status livre">🟢 Livre — aguardando pedido</small>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -348,6 +436,8 @@ function PainelAprovacoes({ user }) {
         </div>
       </div>
 
+      <MapaTempoReal posicoes={posicoes} entregas={entregas} entregadores={entregadores} />
+
       <div className="admin-stats admin-grupos">
         <button className={`admin-stat admin-grupo ${grupo === 'entregadores' ? 'active' : ''}`} onClick={() => setGrupo('entregadores')}>
           <h3>🛵 ENTREGADORES</h3>
@@ -414,7 +504,7 @@ function PainelAprovacoes({ user }) {
 
       <div className="admin-backup">
         <div className="admin-backup-info">
-          <strong>📱 Atualização obrigatória do app (entregador)</strong>
+          <strong>📱 App do entregador — v{APP_VERSAO_ENTREGADOR} (atual)</strong>
           <span>Defina a versão mínima: quem estiver com APK antigo vê a tela de bloqueio com botão para baixar o novo (hospedado aqui no site). Deixe vazio para desativar.</span>
           {versaoMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{versaoMsg}</span>}
         </div>

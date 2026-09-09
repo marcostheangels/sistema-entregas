@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { auth } from './firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { ref, get, set, onValue } from 'firebase/database';
 import { db } from './firebase';
 import Dashboard from './Dashboard';
@@ -28,7 +28,22 @@ function Login({ onAuth }) {
   const [telefone, setTelefone] = useState('');
   const [endereco, setEndereco] = useState('');
   const [erro, setErro] = useState('');
+  const [msgRecuperacao, setMsgRecuperacao] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const enviarRecuperacao = async () => {
+    setErro('');
+    setMsgRecuperacao('');
+    if (!email.trim()) { setMsgRecuperacao('⚠️ Digite seu e-mail acima primeiro.'); return; }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setMsgRecuperacao('📧 Link de redefinição enviado! Abra o e-mail (veja também o spam) e crie uma nova senha.');
+    } catch (err) {
+      setMsgRecuperacao(err.code === 'auth/user-not-found'
+        ? 'Nenhuma conta encontrada com este e-mail.'
+        : 'Erro ao enviar: ' + err.message);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -100,6 +115,12 @@ function Login({ onAuth }) {
           </button>
         </form>
         {erro && <div style={{color:'#ef4444', fontSize:'0.8rem', marginTop:'10px'}}>{erro}</div>}
+        {msgRecuperacao && <div style={{color:'#10b981', fontSize:'0.78rem', marginTop:'10px', lineHeight:1.5}}>{msgRecuperacao}</div>}
+        {!isCadastro && (
+          <div onClick={enviarRecuperacao} style={{marginTop:'10px', fontSize:'0.8rem', color:'#818cf8', cursor:'pointer', fontWeight:600}}>
+            Esqueci minha senha
+          </div>
+        )}
         <div onClick={() => setIsCadastro(!isCadastro)} style={{marginTop:'16px', fontSize:'0.85rem', color:'#6366f1', cursor:'pointer', fontWeight:600}}>
           {isCadastro ? 'Já possui conta? Fazer login' : 'Sua empresa ainda não tem conta? Cadastre-se'}
         </div>
