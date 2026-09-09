@@ -371,6 +371,10 @@ const iconeEmojiEmp = (emoji, cor) => L.divIcon({
 const iconeColetaEmp = iconeEmojiEmp('🏢', '#f59e0b');
 const iconeDestinoEmp = iconeEmojiEmp('🏠', '#10b981');
 
+// Cores das motinhas: cada entregador tem sempre a mesma cor (definida pelo id dele)
+const PALETA_MOTOS = ['#10b981', '#6366f1', '#ec4899', '#f59e0b', '#06b6d4', '#8b5cf6', '#ef4444', '#f97316', '#14b8a6', '#3b82f6', '#eab308', '#a3e635'];
+const corDaMoto = (id) => PALETA_MOTOS[String(id).split('').reduce((s, c) => s + c.charCodeAt(0), 0) % PALETA_MOTOS.length];
+
 const haversineKmEmp = (a, b) => {
   const R = 6371;
   const dLat = (b.lat - a.lat) * Math.PI / 180;
@@ -427,25 +431,24 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
     return () => clearInterval(t);
   }, []);
 
-  const createIcon = (nome, online, bloqueado, semSinal) => {
-    const color = bloqueado ? '#64748b' : (semSinal ? '#f59e0b' : (online ? '#10b981' : '#94a3b8'));
+  const createIcon = (id, nome, online, bloqueado, semSinal) => {
+    // Cor unica por entregador; cinza so quando bloqueado
+    const color = bloqueado ? '#64748b' : corDaMoto(id);
     return L.divIcon({
       html: `<div style="display:flex; flex-direction:column; align-items:center;">
               <div style="background:white; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:800; border:1px solid #333; white-space:nowrap; margin-bottom:2px; box-shadow:0 2px 4px rgba(0,0,0,0.2)">
                 ${nome.split(' ')[0]} ${bloqueado ? '🚫' : ''}${semSinal ? '⏸' : ''}
               </div>
-              <div style="background:${color}; width:32px; height:32px; border-radius:50%; border:3px solid white; box-shadow:0 4px 6px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M19,10c0-1.1-0.9-2-2-2h-3l-2-2h-3l-2,2H4 c-1.1,0-2,0.9-2,2v3c0,1.1,0.9,2,2,2h0.1c0.5,1.7,2,3,3.9,3s3.4-1.3,3.9-3h4.2c0.5,1.7,2,3,3.9,3s3.4-1.3,3.9-3H22v-3 C22,10.9,21.1,10,19,10z"/></svg>
-              </div>
+              <div style="background:${color}; width:34px; height:34px; border-radius:50%; border:2.5px solid white; box-shadow:0 3px 8px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; font-size:17px;">🛵</div>
              </div>`,
       className: '', iconSize: [40, 50], iconAnchor: [20, 45]
     });
   };
 
   // Icone com cache: evita recriar/reaplicar o icone a cada atualizacao de GPS
-  const getIcon = (nome, online, bloqueado, semSinal) => {
-    const k = `${nome}|${online}|${bloqueado}|${semSinal}`;
-    if (!iconCache.current[k]) iconCache.current[k] = createIcon(nome, online, bloqueado, semSinal);
+  const getIcon = (id, nome, online, bloqueado, semSinal) => {
+    const k = `${id}|${nome}|${online}|${bloqueado}|${semSinal}`;
+    if (!iconCache.current[k]) iconCache.current[k] = createIcon(id, nome, online, bloqueado, semSinal);
     return iconCache.current[k];
   };
 
@@ -475,7 +478,7 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
           const nome = entregaAtivaCom ? (info.nome || entregaAtivaCom.entregadorNome || 'Entregador') : 'Entregador';
           const naoInformado = <span style={{ opacity: 0.5 }}>Não informado</span>;
           return (
-            <Marker key={id} position={[pos.lat, pos.lng]} icon={getIcon(nome, pos.online, isBloqueado, semSinal)}>
+            <Marker key={id} position={[pos.lat, pos.lng]} icon={getIcon(id, nome, pos.online, isBloqueado, semSinal)}>
               <Popup autoPan={false}>
                 <div style={{textAlign:'center', minWidth: '200px'}}>
                   <h4 style={{margin: '0 0 5px 0'}}>{entregaAtivaCom ? nome : '🛵 Entregador online'}</h4>

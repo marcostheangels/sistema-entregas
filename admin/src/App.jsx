@@ -73,6 +73,10 @@ function LoginScreen() {
 }
 
 // ===== MAPA + RELATORIO EM TEMPO REAL DOS ENTREGADORES (somente admin) =====
+// Cores das motinhas: cada entregador tem sempre a mesma cor (definida pelo id dele)
+const PALETA_MOTOS = ['#10b981', '#6366f1', '#ec4899', '#f59e0b', '#06b6d4', '#8b5cf6', '#ef4444', '#f97316', '#14b8a6', '#3b82f6', '#eab308', '#a3e635'];
+const corDaMoto = (id) => PALETA_MOTOS[String(id).split('').reduce((s, c) => s + c.charCodeAt(0), 0) % PALETA_MOTOS.length];
+
 function MapaTempoReal({ posicoes, entregas, entregadores }) {
   const divRef = useRef(null);
   const mapRef = useRef(null);
@@ -110,8 +114,9 @@ function MapaTempoReal({ posicoes, entregas, entregadores }) {
       if (!ids.has(id)) { m.remove(); delete marcadoresRef.current[id]; }
     });
     ativos.forEach(a => {
-      const html = `<div style="font-size:26px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))">${a.entrega ? '🛵📦' : '🛵'}</div>`;
-      const icone = L.divIcon({ html, className: '', iconSize: [30, 30], iconAnchor: [15, 15] });
+      const cor = corDaMoto(a.id);
+      const html = `<div style="width:34px;height:34px;border-radius:50%;background:${cor};display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 8px rgba(0,0,0,0.35);border:2.5px solid white;position:relative;">🛵${a.entrega ? '<span style="position:absolute;bottom:-5px;right:-7px;font-size:14px;">📦</span>' : ''}</div>`;
+      const icone = L.divIcon({ html, className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
       const popup = `<b>${a.perfil.nome || 'Entregador'}</b><br/>📞 ${a.perfil.telefone || '—'}<br/>🛵 ${a.perfil.veiculo || '—'}${a.perfil.placa ? ' · ' + a.perfil.placa : ''}<br/><b>${a.entrega ? `📦 Pedido para ${a.entrega.empresaNome || 'Empresa'}` : '🟢 Livre — aguardando pedido'}</b>${a.entrega?.destino ? `<br/>📍 ${a.entrega.destino}` : ''}`;
       const existente = marcadoresRef.current[a.id];
       if (existente) {
@@ -138,7 +143,7 @@ function MapaTempoReal({ posicoes, entregas, entregadores }) {
           {ativos.length === 0 && <div className="admin-vazio">Nenhum entregador online agora.</div>}
           {ativos.map(a => (
             <div key={a.id} className="admin-rel-item">
-              <span className={`rel-ponto ${a.entrega ? 'ocupado' : 'livre'}`} />
+              <span className={`rel-ponto ${a.entrega ? 'ocupado' : 'livre'}`} style={{background: corDaMoto(a.id)}} />
               <div className="rel-info">
                 <strong>{a.perfil.nome || 'Entregador'}</strong>
                 <small>📞 {a.perfil.telefone || '—'} · 🛵 {a.perfil.veiculo || '—'}{a.perfil.placa ? ` · ${a.perfil.placa}` : ''}</small>
