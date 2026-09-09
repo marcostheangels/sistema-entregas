@@ -740,7 +740,7 @@ export default function Dashboard({ user }) {
                       </div>
                     </div>
                   )}
-                  <div className="info-row"><span className="info-label">PGTO</span><span>{e.pagamento === 'pix' ? '📱 Pix' : (e.pagamento === 'cartao' ? '💳 Cartão' : '💵 Dinheiro')}</span></div>
+                  <div className="info-row"><span className="info-label">PGTO</span><span>{e.pagamento === 'pix' ? '📱 Pix' : (e.pagamento === 'cartao' ? '💳 Cartão' : (e.pagamento === 'online' ? '🌐 Pago online' : '💵 Dinheiro'))}</span></div>
                   {e.status !== 'entregue' && e.codigo && (
                     <div className="info-row" style={{background: 'rgba(245, 158, 11, 0.12)', padding: '8px', borderRadius: '8px'}}>
                       <span className="info-label">CÓDIGO</span>
@@ -792,6 +792,7 @@ export default function Dashboard({ user }) {
                   <option value="pix">📱 Pix (chave abaixo)</option>
                   <option value="dinheiro">💵 Dinheiro na entrega</option>
                   <option value="cartao">💳 Cartão na entrega (maquininha)</option>
+                  <option value="online">🌐 Pago online no site (só entregar)</option>
                 </select>
               </div>
 

@@ -1429,7 +1429,7 @@ export default function Dashboard({ user, versao }) {
           </div>
           <div style={{display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px 6px', flexWrap: 'wrap', fontSize: '0.78rem'}}>
             <span style={{background: 'rgba(255,255,255,0.08)', borderRadius: '8px', padding: '5px 10px', fontWeight: 700}}>
-              {entregaAtual.pagamento === 'pix' ? '📱 COBRAR PIX' : entregaAtual.pagamento === 'cartao' ? '💳 COBRAR NO CARTÃO' : '💵 RECEBER EM DINHEIRO'}
+              {entregaAtual.pagamento === 'pix' ? '📱 COBRAR PIX' : entregaAtual.pagamento === 'cartao' ? '💳 COBRAR NO CARTÃO' : entregaAtual.pagamento === 'online' ? '🌐 JÁ PAGO ONLINE — SÓ ENTREGAR' : '💵 RECEBER EM DINHEIRO'}
             </span>
             {entregaAtual.pagamento === 'pix' && entregaAtual.pixChave && (
               <button
