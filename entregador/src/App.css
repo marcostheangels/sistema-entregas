@@ -34,6 +34,13 @@
   font-size: 3rem;
   margin-bottom: 12px;
 }
+.auth-logo img {
+  width: 84px;
+  height: 84px;
+  border-radius: 18px;
+  display: block;
+  margin: 0 auto;
+}
 
 .auth-title {
   font-size: 1.5rem;

@@ -119,7 +119,7 @@ export default function Auth({ onAuth }) {
     <div className="auth-wrapper">
       <div className="auth-card animate-fade">
         <div className="auth-header">
-          <div className="auth-logo">🛵</div>
+          <div className="auth-logo"><img src={`${import.meta.env.BASE_URL}logo-192.png`} alt="ConectaEntregas" /></div>
           <h1 className="auth-title">{isLogin ? 'Bem-vindo de volta!' : 'Faça parte da rede'}</h1>
           <p style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8}}>
             {isLogin ? 'Entre com sua conta para ver entregas' : 'Cadastre-se para começar a entregar'}

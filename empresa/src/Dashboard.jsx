@@ -658,7 +658,7 @@ export default function Dashboard({ user }) {
     <div className="dashboard">
       <header>
         <div className="brand">
-          <div style={{background:'var(--primary)', color:'white', width:'40px', height:'40px', borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.2rem'}}>🏢</div>
+          <img src={`${import.meta.env.BASE_URL}logo-192.png`} alt="" style={{width:'40px', height:'40px', borderRadius:'10px'}} />
           <h1>CONECTAENTREGAS EMPRESAS</h1>
         </div>
         <div className="user-info">

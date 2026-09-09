@@ -82,7 +82,7 @@ function Login({ onAuth }) {
   return (
     <div className="login-container">
       <div className="login-card">
-        <div style={{fontSize:'3rem', marginBottom:'1rem'}}>🏢</div>
+        <img src={`${import.meta.env.BASE_URL}logo-256.png`} alt="ConectaEntregas" style={{width:'96px', height:'96px', marginBottom:'1rem', borderRadius:'20px'}} />
         <h1>ConectaEntregas Empresas</h1>
         <p>{isCadastro ? 'Cadastre sua empresa (sujeito à aprovação)' : 'Acesse o gerenciamento de entregas'}</p>
         <form onSubmit={handleSubmit}>

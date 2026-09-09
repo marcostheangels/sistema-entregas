@@ -1045,7 +1045,8 @@ export default function Dashboard({ user }) {
     <div className="app-container">
       <nav className="dashboard-nav">
         <div className="nav-brand">
-          <h1>CONECTA<span>ENTREGAS</span></h1>
+          <img src={`${import.meta.env.BASE_URL}logo-192.png`} alt="" style={{width:'34px', height:'34px', borderRadius:'8px', marginRight:'8px', verticalAlign:'middle'}} />
+          <h1 style={{display:'inline-block', verticalAlign:'middle'}}>CONECTA<span>ENTREGAS</span></h1>
         </div>
         <div className="nav-actions">
           <button

@@ -54,7 +54,7 @@ function LoginScreen() {
   return (
     <div className="admin-login-wrap">
       <div className="admin-login-card">
-        <div className="admin-logo">🛡️</div>
+        <div className="admin-logo"><img src={`${import.meta.env.BASE_URL}logo-192.png`} alt="ConectaEntregas" /></div>
         <h1>ConectaEntregas Master</h1>
         <p>Painel Super Admin — acesso exclusivo</p>
         <form onSubmit={handleSubmit}>
@@ -219,7 +219,7 @@ function PainelAprovacoes({ user }) {
     <div className="admin-painel">
       <header className="admin-header">
         <div className="admin-brand">
-          <span className="admin-brand-icon">🛡️</span>
+          <span className="admin-brand-icon"><img src={`${import.meta.env.BASE_URL}logo-192.png`} alt="" /></span>
           <div>
             <h1>ConectaEntregas Master</h1>
             <p>{user.email}</p>
