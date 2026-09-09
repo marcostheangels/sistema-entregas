@@ -123,6 +123,34 @@ function PainelAprovacoes({ user }) {
   };
 
   // ===== BACKUP / RESTAURACAO / LIMPEZA TOTAL (somente admin) =====
+  // Taxa da plataforma (config global) + faturamento do sistema
+  const [configTaxa, setConfigTaxa] = useState({ porEntrega: 0, percentual: 0 });
+  const [taxaMsg, setTaxaMsg] = useState('');
+  useEffect(() => {
+    const u = onValue(ref(db, 'config/taxa'), snap => setConfigTaxa(snap.val() || { porEntrega: 0, percentual: 0 }));
+    return u;
+  }, []);
+
+  const salvarTaxa = async () => {
+    try {
+      await set(ref(db, 'config/taxa'), {
+        porEntrega: parseFloat(configTaxa.porEntrega) || 0,
+        percentual: parseFloat(configTaxa.percentual) || 0
+      });
+      setTaxaMsg('✅ Taxa salva — vale para as próximas entregas.');
+      setTimeout(() => setTaxaMsg(''), 4000);
+    } catch (e) { setTaxaMsg('❌ ' + e.message); }
+  };
+
+  const taxaNova = (e) => Math.round((((configTaxa.porEntrega || 0)) + (parseFloat(e.valor || 0)) * ((configTaxa.percentual || 0) / 100)) * 100) / 100;
+  // Receita da plataforma: prioriza a taxa gravada na entrega; antigas sem taxa usam a atual
+  const taxaDe = (e) => (e.taxaPlataforma != null ? parseFloat(e.taxaPlataforma) : taxaNova(e));
+  const liquidoDe = (e) => (parseFloat(e.valor || 0)) - taxaDe(e);
+  const receitaHoje = concluidasHoje.reduce((s, e) => s + taxaDe(e), 0);
+  const concluidasTotal = entregas.filter(e => e.status === 'entregue');
+  const receitaTotal = concluidasTotal.reduce((s, e) => s + taxaDe(e), 0);
+  const aRepassarTotal = concluidasTotal.reduce((s, e) => s + liquidoDe(e), 0);
+
   const [backupMsg, setBackupMsg] = useState('');
 
   const fazerBackup = async () => {
@@ -289,6 +317,10 @@ function PainelAprovacoes({ user }) {
           <p style={{fontSize: '1.15rem', color: '#10b981'}}>R$ {faturamentoHoje.toFixed(2)}</p>
         </div>
         <div className="admin-stat">
+          <h3>🏦 Sua receita hoje</h3>
+          <p style={{fontSize: '1.15rem', color: '#f59e0b'}}>R$ {receitaHoje.toFixed(2)}</p>
+        </div>
+        <div className="admin-stat">
           <h3>🚚 Em andamento</h3>
           <p>{emAndamento.length}</p>
         </div>
@@ -343,6 +375,34 @@ function PainelAprovacoes({ user }) {
           <button className="admin-btn revogar" onClick={apagarTudo}>🧹 APAGAR TUDO</button>
         </div>
         {backupMsg && <div className="admin-backup-msg">{backupMsg}</div>}
+      </div>
+
+      <div className="admin-backup">
+        <div className="admin-backup-info">
+          <strong>🏦 Taxa da plataforma (sua receita por entrega)</strong>
+          <span>Vale para as próximas entregas. Ex.: R$ 1,00 fixo + 10% = entrega de R$ 10 paga R$ 1,60 de taxa e o motoboy recebe R$ 8,40.</span>
+          {taxaMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{taxaMsg}</span>}
+        </div>
+        <div className="admin-backup-botoes" style={{alignItems: 'center'}}>
+          <label style={{fontSize: '0.72rem', color: '#94a3b8'}}>Fixo R$
+            <input type="number" step="0.01" min="0" value={configTaxa.porEntrega} onChange={e => setConfigTaxa(t => ({ ...t, porEntrega: e.target.value }))} style={{width: 76, marginLeft: 6, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+          </label>
+          <label style={{fontSize: '0.72rem', color: '#94a3b8'}}>+ %
+            <input type="number" step="0.5" min="0" value={configTaxa.percentual} onChange={e => setConfigTaxa(t => ({ ...t, percentual: e.target.value }))} style={{width: 64, marginLeft: 6, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+          </label>
+          <button className="admin-btn backup" onClick={salvarTaxa}>SALVAR TAXA</button>
+        </div>
+      </div>
+
+      <div className="admin-backup">
+        <div className="admin-backup-info">
+          <strong>📊 Faturamento total do sistema</strong>
+          <span>{concluidasTotal.length} entregas concluídas · Faturamento bruto R$ {concluidasTotal.reduce((s, e) => s + parseFloat(e.valor || 0), 0).toFixed(2)} · A repassar aos entregadores R$ {aRepassarTotal.toFixed(2)}</span>
+        </div>
+        <div className="admin-stat" style={{minWidth: 130}}>
+          <h3>Sua receita total</h3>
+          <p style={{fontSize: '1.2rem', color: '#f59e0b'}}>R$ {receitaTotal.toFixed(2)}</p>
+        </div>
       </div>
 
       <div className="admin-lista">

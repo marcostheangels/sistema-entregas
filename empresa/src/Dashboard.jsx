@@ -529,8 +529,9 @@ export default function Dashboard({ user }) {
   const [entregadores, setEntregadores] = useState({});
   const [posicoes, setPosicoes] = useState({});
   const [perfil, setPerfil] = useState(null);
-  const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '' });
+  const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '', pagamento: 'pix', pixChave: '' });
   const [coords, setCoords] = useState({ origem: null, destino: null });
+  const [configTaxa, setConfigTaxa] = useState({ porEntrega: 0, percentual: 0 });
   const [statusFiltro, setStatusFiltro] = useState('pendente');
   const [salvando, setSalvando] = useState(false);
 
@@ -544,7 +545,8 @@ export default function Dashboard({ user }) {
     });
     const unsubEntregadores = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
     const unsubPosicoes = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
-    return () => { unsubPerfil(); unsubEntregas(); unsubEntregadores(); unsubPosicoes(); };
+    const unsubConfig = onValue(ref(db, 'config/taxa'), snap => setConfigTaxa(snap.val() || { porEntrega: 0, percentual: 0 }));
+    return () => { unsubPerfil(); unsubEntregas(); unsubEntregadores(); unsubPosicoes(); unsubConfig(); };
   }, [user.uid]);
 
   // Registros antigos podem ter ficado sem nome: completa a partir da aprovacao
@@ -619,15 +621,28 @@ export default function Dashboard({ user }) {
                 Math.sin(dLng/2) * Math.sin(dLng/2);
       const distanciaKm = Math.round(6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 10) / 10;
       const novaRef = push(ref(db, 'entregas'));
+      // Codigo de verificacao anti-fraude + taxa da plataforma (config do Master)
+      const codigo = String(Math.floor(1000 + Math.random() * 9000));
+      const v = parseFloat(form.valor || 0);
+      const taxaPlataforma = Math.round(((configTaxa.porEntrega || 0) + v * ((configTaxa.percentual || 0) / 100)) * 100) / 100;
       await set(novaRef, {
-        ...form, empresaId: user.uid, status: 'pendente',
+        ...form, codigo, taxaPlataforma,
+        pixChave: form.pagamento === 'pix' ? form.pixChave : '',
+        empresaId: user.uid, status: 'pendente',
         origemEndereco, destinoEndereco,
         empresaNome: p?.nome || user.email,
         empresaTelefone: p?.telefone || '',
         createdAt: Date.now(), origemCoords: coords.origem, destinoCoords: coords.destino,
         distanciaKm
       });
-      setForm({ origem: '', destino: '', descricao: '', valor: '' });
+      // Espelho publico de rastreio (o cliente final acompanha sem logar)
+      await set(ref(db, `rastreio/${novaRef.key}`), {
+        status: 'pendente', empresa: p?.nome || user.email,
+        bairro: destinoEndereco, valor: v,
+        destinoLat: coords.destino.lat, destinoLng: coords.destino.lng,
+        criadoEm: Date.now()
+      });
+      setForm({ origem: '', destino: '', descricao: '', valor: '', pagamento: form.pagamento, pixChave: form.pixChave });
       setCoords({ origem: null, destino: null });
     } finally {
       setSalvando(false);
@@ -645,6 +660,18 @@ export default function Dashboard({ user }) {
   const toggleBloqueio = (id, status) => {
     if (status) update(ref(db, `entregadores/${id}/empresasBloqueadas`), { [user.uid]: true });
     else remove(ref(db, `entregadores/${id}/empresasBloqueadas/${user.uid}`));
+  };
+
+  // Abre o comprovante (foto) anexado pelo entregador na conclusao
+  const verComprovante = async (id) => {
+    try {
+      const s = await get(ref(db, `comprovantes/${id}`));
+      const foto = s.val()?.foto;
+      if (!foto) { alert('Nenhuma foto anexada para esta entrega.'); return; }
+      const w = window.open('', '_blank');
+      if (w) w.document.write('<title>Comprovante — ConectaEntregas</title><body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="' + foto + '" style="max-width:100%;max-height:100vh"></body>');
+      else alert('Permita pop-ups para ver a foto do comprovante.');
+    } catch (e) { alert('Erro ao carregar comprovante: ' + e.message); }
   };
 
   const listFiltered = entregas.filter(e => {
@@ -722,13 +749,30 @@ export default function Dashboard({ user }) {
                       </div>
                     </div>
                   )}
+                  <div className="info-row"><span className="info-label">PGTO</span><span>{e.pagamento === 'pix' ? '📱 Pix' : (e.pagamento === 'cartao' ? '💳 Cartão' : '💵 Dinheiro')}</span></div>
+                  {e.status !== 'entregue' && e.codigo && (
+                    <div className="info-row" style={{background: 'rgba(245, 158, 11, 0.12)', padding: '8px', borderRadius: '8px'}}>
+                      <span className="info-label">CÓDIGO</span>
+                      <span style={{fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.05rem', color: 'var(--accent)', letterSpacing: '0.25em'}}>{e.codigo}</span>
+                      <span style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>— entregue ao cliente p/ validar a entrega</span>
+                    </div>
+                  )}
                 </div>
                 <div className="delivery-footer">
                   <span className="price-tag">R$ {e.valor}</span>
                   {e.status === 'pendente' ? (
-                    <button onClick={() => remove(ref(db, `entregas/${e.id}`))} className="btn-cancel">CANCELAR</button>
+                    <button onClick={() => { remove(ref(db, `entregas/${e.id}`)); remove(ref(db, `rastreio/${e.id}`)); }} className="btn-cancel">CANCELAR</button>
+                  ) : e.status === 'entregue' ? (
+                    <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                      <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Finalizado {e.entregueEm ? new Date(e.entregueEm).toLocaleTimeString() : ''}</span>
+                      <button onClick={() => verComprovante(e.id)} className="btn-cancel" style={{color: 'var(--success)', borderColor: 'rgba(16,185,129,0.4)'}}>📷 COMPROVANTE</button>
+                    </div>
                   ) : (
-                    <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Finalizado às {e.entregueEm ? new Date(e.entregueEm).toLocaleTimeString() : '--:--'}</span>
+                    <button className="btn-cancel" style={{color: 'var(--secondary)', borderColor: 'rgba(14,165,233,0.4)'}}
+                      onClick={() => {
+                        const link = `https://marcostheangels.github.io/sistema-entregas/rastreio/?pedido=${e.id}`;
+                        navigator.clipboard?.writeText(link).then(() => alert('🔗 Link de rastreio copiado!\n\nCole no WhatsApp do cliente:\n' + link)).catch(() => window.open(link, '_blank'));
+                      }}>🔗 LINK DE RASTREIO</button>
                   )}
                 </div>
               </div>
@@ -753,6 +797,22 @@ export default function Dashboard({ user }) {
                 <label className="form-label">💰 Valor da Corrida</label>
                 <input type="number" placeholder="R$ 0,00" value={form.valor} onChange={e=>setForm({...form, valor:e.target.value})} required className="input-field" />
               </div>
+
+              <div className="form-group">
+                <label className="form-label">💳 Como o cliente paga?</label>
+                <select className="input-field" value={form.pagamento} onChange={e=>setForm({...form, pagamento:e.target.value})}>
+                  <option value="pix">📱 Pix (chave abaixo)</option>
+                  <option value="dinheiro">💵 Dinheiro na entrega</option>
+                  <option value="cartao">💳 Cartão na entrega (maquininha)</option>
+                </select>
+              </div>
+
+              {form.pagamento === 'pix' && (
+                <div className="form-group">
+                  <label className="form-label">🔑 Sua chave Pix (o cliente paga nela)</label>
+                  <input type="text" placeholder="CPF, celular ou chave aleatória" value={form.pixChave} onChange={e=>setForm({...form, pixChave:e.target.value})} className="input-field" />
+                </div>
+              )}
 
               <button type="submit" className="btn-primary" style={{marginTop: '1rem'}} disabled={salvando}>{salvando ? 'PUBLICANDO...' : 'PUBLICAR AGORA'}</button>
             </form>

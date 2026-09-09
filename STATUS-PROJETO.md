@@ -1,4 +1,13 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 11:55
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 12:25
+
+## 🚀 Pacote iFood/99 — comprovante, taxa, pagamento e rastreio (09/09/2026)
+- **Código de verificação anti-fraude**: toda entrega nova gera um código de 4 dígitos (empresa vê no card). O entregador só conclui digitando o código certo
+- **Foto comprovante obrigatória**: após validar o código, o app abre a câmera; foto comprimida (JPEG ~55%, max 900px) salva em `comprovantes/{id}` — empresa vê pelo botão "📷 COMPROVANTE"
+- **Taxa da plataforma**: Master configura fixo R$ + % em `config/taxa` (novo card no admin). Taxa gravada na entrega na criação (`taxaPlataforma`). Entregador vê e recebe o líquido; Master vê "Sua receita hoje/total" + a repassar
+- **Forma de pagamento**: empresa escolhe Pix/Dinheiro/Cartão na criação (+ chave Pix); entregador vê "COBRAR PIX/CARTÃO/DINHEIRO" com botão copiar chave
+- **Link de rastreio público**: página nova `docs/rastreio/index.html` (sem build, sem login) — `?pedido={id}` mostra status em passos + mapa com a moto ao vivo. Empresa copia o link no card em rota. Espelho `rastreio/{id}` escrito pela empresa (criação/cancelamento) e pelo entregador (aceite/peguei/entregue/GPS)
+- Regras novas: `rastreio` (leitura pública, escrita logada), `comprovantes` (logado), `config` (admin escreve)
+- Regenerados os 2 APKs. Testes: lint 0 erros (3 apps), builds OK, REST do rastreio público OK, sintaxe do JS da página OK
 
 ## ⏳➡️✅ Aprovação em tempo real + permissões obrigatórias (09/09/2026)
 - Tela "Cadastro em análise" agora escuta o banco em tempo real: quando o admin aprova, o app do entregador **abre sozinho** (sem SAIR/logar de novo); texto atualizado para avisar isso

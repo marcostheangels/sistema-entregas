@@ -56,6 +56,28 @@ const elMarcador = (emoji, cor, tamanho = 38) => {
 };
 
 // Rumo (bearing em graus) indo do ponto a para o ponto b
+// Comprime a foto do comprovante (max 900px, JPEG ~55%) para caber no banco
+function comprimirImagem(arquivo) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(arquivo);
+    img.onload = () => {
+      try {
+        const max = 900;
+        const escala = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * escala);
+        c.height = Math.round(img.height * escala);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.55));
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Falha ao ler a foto')); };
+    img.src = url;
+  });
+}
+
 const calcularRumo = (a, b) => {
   const dLon = (b.lng - a.lng) * Math.PI / 180;
   const y = Math.sin(dLon) * Math.cos(b.lat * Math.PI / 180);
@@ -936,6 +958,58 @@ export default function Dashboard({ user }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ===== COMPROVANTE DE ENTREGA: codigo de verificacao + foto obrigatoria =====
+  const [modalCodigo, setModalCodigo] = useState(null); // { entrega, etapa: 'codigo' | 'foto' }
+  const [codigoDigitado, setCodigoDigitado] = useState('');
+  const [erroCodigo, setErroCodigo] = useState('');
+  const [enviandoComprovante, setEnviandoComprovante] = useState(false);
+  const rastreioAtivoRef = useRef(null); // entrega ativa: espelha GPS no rastreio publico
+
+  const iniciarConclusao = (ent) => {
+    setCodigoDigitado('');
+    setErroCodigo('');
+    setModalCodigo({ entrega: ent, etapa: 'codigo' });
+  };
+
+  const confirmarCodigo = () => {
+    if (codigoDigitado.trim() === String(modalCodigo.entrega.codigo || '')) {
+      setErroCodigo('');
+      setModalCodigo(m => ({ ...m, etapa: 'foto' }));
+    } else {
+      setErroCodigo('❌ Código errado. Confira com o cliente — a entrega só conclui com o código certo.');
+    }
+  };
+
+  const enviarComprovante = async (arquivo) => {
+    if (!arquivo || enviandoComprovante) return;
+    const ent = modalCodigo.entrega;
+    setEnviandoComprovante(true);
+    try {
+      const foto = await comprimirImagem(arquivo);
+      await set(ref(db, `comprovantes/${ent.id}`), { foto, codigo: ent.codigo || '', entregadorId: user.uid, at: Date.now() });
+      await update(ref(db, `entregas/${ent.id}`), { status: 'entregue', entregueEm: Date.now(), codigoValidado: true });
+      await update(ref(db, `rastreio/${ent.id}`), { status: 'entregue', entregueEm: Date.now() }).catch(() => {});
+      rastreioAtivoRef.current = null;
+      setEntregaEmRota(null);
+      setRotaInfo(null);
+      setMensagemNova(null);
+      setResposta('');
+      lastMsgTs.current = Date.now();
+      // Apaga o historico de mensagens desta entrega na hora
+      try {
+        const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(ent.id)));
+        const updates = {};
+        snap.forEach(c => { updates[c.key] = null; });
+        if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
+      } catch { /* sem permissao */ }
+    } catch (e) {
+      alert('Erro ao concluir: ' + e.message);
+    } finally {
+      setEnviandoComprovante(false);
+      setModalCodigo(null);
+    }
+  };
+
   // ===== PERMISSOES: obrigatorio permitir a localizacao antes de ficar online =====
   const [permissoesOk, setPermissoesOk] = useState(false);
   const [msgPermissao, setMsgPermissao] = useState('');
@@ -1020,7 +1094,11 @@ export default function Dashboard({ user }) {
         (pos) => {
           const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: Date.now() };
           setPosicao(p);
-          if (onlineRef.current) update(ref(db, `posicoes/${user.uid}`), { ...p, online: true });
+          if (onlineRef.current) {
+            update(ref(db, `posicoes/${user.uid}`), { ...p, online: true });
+            // Espelha o GPS na pagina publica de rastreio durante a entrega
+            if (rastreioAtivoRef.current) update(ref(db, `rastreio/${rastreioAtivoRef.current}`), { lat: p.lat, lng: p.lng }).catch(() => {});
+          }
         },
         (err) => addLog('Erro GPS: ' + err.message),
         { enableHighAccuracy: true }
@@ -1162,7 +1240,7 @@ export default function Dashboard({ user }) {
           <div className="stat-card">
             <span className="stat-label">Ganhos</span>
             <span className="stat-value" style={{color: 'var(--success)'}}>
-              R$ {entregas.filter(e => e.entregadorId === user.uid && e.status === 'entregue' && e.entregueEm && e.entregueEm >= new Date().setHours(0,0,0,0)).reduce((acc, curr) => acc + parseFloat(curr.valor || 0), 0).toFixed(2)}
+              R$ {entregas.filter(e => e.entregadorId === user.uid && e.status === 'entregue' && e.entregueEm && e.entregueEm >= new Date().setHours(0,0,0,0)).reduce((acc, curr) => acc + (parseFloat(curr.valor || 0) - parseFloat(curr.taxaPlataforma || 0)), 0).toFixed(2)}
             </span>
           </div>
         </div>
@@ -1225,6 +1303,10 @@ export default function Dashboard({ user }) {
                     });
                     if (!result.committed) {
                       alert('Esta entrega já foi aceita por outro entregador.');
+                    } else {
+                      // Espelho publico de rastreio: cliente passa a ver o status
+                      rastreioAtivoRef.current = item.id;
+                      update(ref(db, `rastreio/${item.id}`), { status: 'aceite', aceiteEm: Date.now() }).catch(() => {});
                     }
                   } else if (item.status === 'aceite') {
                     // Abre a navegacao em modo BUSCANDO O PEDIDO (confirma a coleta no mapa)
@@ -1260,12 +1342,64 @@ export default function Dashboard({ user }) {
         />
       )}
 
+      {/* Modal de conclusao: codigo de verificacao + foto do comprovante */}
+      {modalCodigo && (
+        <div className="modal-comprovante">
+          <div className="modal-caixa">
+            {modalCodigo.etapa === 'codigo' ? (
+              <>
+                <h3>🔐 Código de entrega</h3>
+                <p>Peça ao cliente o <strong>código de 4 dígitos</strong> que a empresa mandou por WhatsApp:</p>
+                <input
+                  inputMode="numeric"
+                  maxLength={4}
+                  autoFocus
+                  value={codigoDigitado}
+                  onChange={e => setCodigoDigitado(e.target.value.replace(/\D/g, ''))}
+                  placeholder="0000"
+                />
+                {erroCodigo && <small className="modal-erro">{erroCodigo}</small>}
+                <div className="modal-botoes">
+                  <button onClick={() => setModalCodigo(null)}>CANCELAR</button>
+                  <button className="ok" onClick={confirmarCodigo} disabled={codigoDigitado.length !== 4}>VALIDAR</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>📷 Foto do comprovante</h3>
+                <p>Código validado! Agora <strong>fotografe o pedido entregue</strong> para finalizar.</p>
+                <label className="btn-foto">
+                  {enviandoComprovante ? 'ENVIANDO...' : '📸 TIRAR FOTO E CONCLUIR'}
+                  <input type="file" accept="image/*" capture="environment" style={{display: 'none'}} disabled={enviandoComprovante} onChange={e => enviarComprovante(e.target.files?.[0])} />
+                </label>
+                <div className="modal-botoes">
+                  <button onClick={() => setModalCodigo(null)} disabled={enviandoComprovante}>VOLTAR</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {entregaAtual && (
         <div className="route-overlay">
           <div className="route-header">
             <button className="btn-back" onClick={() => { setEntregaEmRota(null); setRotaInfo(null); }}>←</button>
             <div style={{flex: 1}}><h2 style={{fontSize: '1rem', fontWeight: 800}}>Navegação</h2></div>
-            <div className="delivery-dist">R$ {entregaAtual.valor}</div>
+            <div className="delivery-dist">R$ {(parseFloat(entregaAtual.valor || 0) - parseFloat(entregaAtual.taxaPlataforma || 0)).toFixed(2)}</div>
+          </div>
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px', padding: '0 14px 6px', flexWrap: 'wrap', fontSize: '0.78rem'}}>
+            <span style={{background: 'rgba(255,255,255,0.08)', borderRadius: '8px', padding: '5px 10px', fontWeight: 700}}>
+              {entregaAtual.pagamento === 'pix' ? '📱 COBRAR PIX' : entregaAtual.pagamento === 'cartao' ? '💳 COBRAR NO CARTÃO' : '💵 RECEBER EM DINHEIRO'}
+            </span>
+            {entregaAtual.pagamento === 'pix' && entregaAtual.pixChave && (
+              <button
+                onClick={() => { navigator.clipboard?.writeText(entregaAtual.pixChave); alert('🔑 Chave Pix copiada!\n\n' + entregaAtual.pixChave); }}
+                style={{background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.4)', borderRadius: '8px', padding: '5px 10px', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer'}}
+              >
+                COPIAR CHAVE: {String(entregaAtual.pixChave).slice(0, 16)}{String(entregaAtual.pixChave).length > 16 ? '…' : ''}
+              </button>
+            )}
           </div>
           <div className="map-container">
             <RotaMapa posicao={posicao} entrega={entregaAtual} rotaInfo={rotaInfo} />
@@ -1305,6 +1439,7 @@ export default function Dashboard({ user }) {
                     onClick={async () => {
                       // Marca que pegou o pedido: muda para LEVANDO e recalcula a rota direto ao destino
                       await update(ref(db, `entregas/${entregaAtual.id}`), { status: 'em_transito', coletaAt: Date.now() });
+                      update(ref(db, `rastreio/${entregaAtual.id}`), { status: 'em_transito', coletaEm: Date.now() }).catch(() => {});
                       if (!isOnline) toggleTracking(true);
                       ultimaPosRota.current = null;
                       calcRoute(entregaAtual, true);
@@ -1317,23 +1452,7 @@ export default function Dashboard({ user }) {
                 <button
                   className="btn-nav-action"
                   style={{background: 'var(--success)', color: '#fff', flex: 1.5}}
-                  onClick={async () => {
-                    const entregaId = entregaAtual.id;
-                    await update(ref(db, `entregas/${entregaId}`), { status: 'entregue', entregueEm: Date.now() });
-                    setEntregaEmRota(null);
-                    setRotaInfo(null);
-                    setMensagemNova(null);
-                    setResposta('');
-                    // Ignora mensagens antigas (nao reexibe popup com historico)
-                    lastMsgTs.current = Date.now();
-                    // Apaga o historico de mensagens desta entrega na hora
-                    try {
-                      const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(entregaId)));
-                      const updates = {};
-                      snap.forEach(c => { updates[c.key] = null; });
-                      if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
-                    } catch { /* sem permissao */ }
-                  }}
+                  onClick={() => iniciarConclusao(entregaAtual)}
                 >
                   FINALIZAR
                 </button>

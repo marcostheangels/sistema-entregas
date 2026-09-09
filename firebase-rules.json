@@ -50,6 +50,22 @@
         "$other": { ".validate": false }
       }
     },
+    "rastreio": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null"
+      }
+    },
+    "comprovantes": {
+      "$id": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "config": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
+    },
     "mensagens": {
       ".read": "auth != null && (root.child('admin').child(auth.uid).val() === true || (query.orderByChild === 'empresaId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregadorId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregaId' && (root.child('entregas').child(query.equalTo).child('empresaId').val() === auth.uid || root.child('entregas').child(query.equalTo).child('entregadorId').val() === auth.uid)))",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rastreio — ConectaEntregas</title>
+<link rel="icon" type="image/png" href="../logo-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f172a;
+    color: #f8fafc;
+    min-height: 100vh;
+    background-image: radial-gradient(900px 420px at 85% -10%, rgba(99, 102, 241, 0.2), transparent 60%);
+  }
+  .topo {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 18px;
+    background: rgba(30, 41, 59, 0.9);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .topo img { width: 34px; height: 34px; border-radius: 8px; }
+  .topo strong { font-size: 1rem; letter-spacing: 0.03em; }
+  .topo span { font-size: 0.72rem; color: #94a3b8; display: block; }
+  .caixa { max-width: 520px; margin: 0 auto; padding: 18px; }
+  .status-card {
+    background: #1e293b; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px; padding: 18px; margin-bottom: 14px;
+  }
+  .status-grande { font-size: 1.25rem; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+  .bolinha { width: 12px; height: 12px; border-radius: 50%; background: #64748b; flex: none; }
+  .bolinha.ativa { background: #10b981; box-shadow: 0 0 0 5px rgba(16,185,129,0.18); animation: pulsa 1.5s infinite; }
+  @keyframes pulsa { 50% { box-shadow: 0 0 0 9px rgba(16,185,129,0); } }
+  .sub { color: #94a3b8; font-size: 0.85rem; margin-top: 6px; line-height: 1.5; }
+  .passos { list-style: none; margin-top: 12px; }
+  .passos li { padding: 7px 0; font-size: 0.86rem; color: #64748b; display: flex; gap: 9px; align-items: center; }
+  .passos li.fei { color: #34d399; }
+  .passos li.atu { color: #f8fafc; font-weight: 700; }
+  .mapa { height: 320px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px; }
+  #map { height: 100%; }
+  .erro { text-align: center; padding: 60px 20px; }
+  .erro h1 { font-size: 1.3rem; margin-bottom: 8px; }
+  .erro p { color: #94a3b8; font-size: 0.9rem; }
+  .codigo-box {
+    display: none;
+    background: rgba(245, 158, 11, 0.12); border: 1px dashed rgba(245,158,11,0.5);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; text-align: center;
+  }
+  .codigo-box strong { font-size: 1.5rem; letter-spacing: 0.35em; color: #fbbf24; font-family: monospace; }
+  .codigo-box small { display: block; color: #94a3b8; margin-top: 4px; font-size: 0.72rem; }
+  .atualizado { text-align: center; color: #475569; font-size: 0.7rem; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <div class="topo">
+    <img src="../logo-192.png" alt="">
+    <div><strong>CONECTAENTREGAS</strong><span>Rastreamento de pedido</span></div>
+  </div>
+  <div class="caixa" id="conteudo">
+    <div class="erro"><h1>⏳ Carregando pedido...</h1></div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyDY7Ea1B6ofAHSmFyyXPnUp9SdebZbF1EU",
+      databaseURL: "https://entregadores-e-empresas-default-rtdb.firebaseio.com",
+      projectId: "entregadores-e-empresas"
+    });
+
+    const PASSOS = [
+      { k: 'pendente',    t: '🕐 Pedido criado — aguardando motoboy' },
+      { k: 'aceite',      t: '✅ Motoboy aceitou o pedido' },
+      { k: 'em_transito', t: '🛵 Saiu para entrega' },
+      { k: 'entregue',    t: '📦 Entregue! Bom apetite / obrigado!' }
+    ];
+
+    const id = new URLSearchParams(location.search).get('pedido');
+    const caixa = document.getElementById('conteudo');
+    if (!id) { caixa.innerHTML = '<div class="erro"><h1>🔗 Link inválido</h1><p>Peça o link de rastreio correto à empresa.</p></div>'; }
+    else {
+      const db = firebase.database();
+      let mapa = null, marcador = null;
+      db.ref('rastreio/' + id).on('value', s => {
+        const d = s.val();
+        if (!d) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
+        desenhar(d);
+      }, () => { caixa.innerHTML = '<div class="erro"><h1>⚠️ Erro de conexão</h1><p>Tente novamente em instantes.</p></div>'; });
+    }
+
+    function desenhar(d) {
+      const i = PASSOS.findIndex(p => p.k === d.status);
+      const nomeStatus = i >= 0 ? PASSOS[i].t.replace(/^[^\s]+\s/, '') : d.status;
+      const corBola = d.status === 'entregue' ? '#10b981' : (d.status === 'pendente' ? '#f59e0b' : '#6366f1');
+      const destaque = d.status === 'entregue'
+        ? 'Seu pedido foi entregue. Obrigado!'
+        : (d.status === 'em_transito'
+          ? 'Seu pedido está a caminho! Acompanhe a moto no mapa.'
+          : (d.status === 'aceite' ? 'Um motoboy já pegou seu pedido e está indo buscar.' : 'Estamos localizando um motoboy para você.'));
+
+      caixa.innerHTML = `
+        <div class="status-card">
+          <div class="status-grande"><span class="bolinha ${d.status === 'entregue' ? 'ativa' : ''}" style="background:${corBola}"></span>${nomeStatus.toUpperCase()}</div>
+          <p class="sub">${destaque}</p>
+          <ul class="passos">
+            ${PASSOS.map((p, j) => `<li class="${j < i ? 'fei' : (j === i ? 'atu' : '')}">${j < i ? '✔' : (j === i ? '➤' : '·')} ${p.t.replace(/^[^\s]+\s/, '')}</li>`).join('')}
+          </ul>
+        </div>
+        <div class="mapa"><div id="map"></div></div>
+        <div class="atualizado">Atualizado ${new Date().toLocaleTimeString('pt-BR')} · ConectaEntregas</div>
+      `;
+
+      if (!mapa) mapa = L.map('map', { zoomControl: false }).setView([-16.73, -43.86], 13);
+      setTimeout(() => mapa.invalidateSize(), 50);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
+
+      if (d.lat && d.lng) {
+        if (!marcador) {
+          const icone = L.divIcon({ html: '<div style="font-size:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🛵</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
+          marcador = L.marker([d.lat, d.lng], { icon: icone }).addTo(mapa);
+          mapa.setView([d.lat, d.lng], 15);
+        } else {
+          marcador.setLatLng([d.lat, d.lng]);
+          mapa.panTo([d.lat, d.lng]);
+        }
+      } else {
+        if (d.destinoLat && d.destinoLng) { mapa.setView([d.destinoLat, d.destinoLng], 14); }
+      }
+    }
+  </script>
+</body>
+</html>
