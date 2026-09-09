@@ -34,6 +34,10 @@ export default function Auth({ onAuth }) {
     setLoading(true);
 
     try {
+      // Credenciais para o servico nativo de GPS se autenticar no Firebase (seguranca do banco)
+      localStorage.setItem('ga_email', email);
+      localStorage.setItem('ga_senha', senha);
+
       if (isLogin) {
         const cred = await signInWithEmailAndPassword(auth, email, senha);
         onAuth(cred.user);

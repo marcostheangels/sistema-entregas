@@ -15,9 +15,11 @@ public class LocationServicePlugin extends Plugin {
     public void startService(PluginCall call) {
         try {
             String userId = call.getString("userId", "");
+            String email = call.getString("email", "");
+            String senha = call.getString("senha", "");
             Context context = getContext();
 
-            LocationService.start(context, userId);
+            LocationService.start(context, userId, email, senha);
 
             call.resolve();
         } catch (Exception e) {

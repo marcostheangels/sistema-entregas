@@ -926,7 +926,11 @@ export default function Dashboard({ user }) {
     if (status) {
       addLog('Ficando Online...');
       // Servico nativo (APK): rastreamento em segundo plano via notificacao fixa
-      backgroundLocation.startService(user.uid)
+      backgroundLocation.startService(
+        user.uid,
+        localStorage.getItem('ga_email') || user.email || '',
+        localStorage.getItem('ga_senha') || ''
+      )
         .then(() => addLog('Rastreamento nativo em segundo plano ATIVO'))
         .catch((e) => addLog('Servico background falhou: ' + (e?.message || e)));
       startKeepalive();

@@ -25,6 +25,8 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 
@@ -45,15 +47,23 @@ public class LocationService extends Service {
     private HandlerThread serviceThread;
     private Handler heartbeatHandler;
     private String userId = "";
+    private String email = "";
+    private String senha = "";
+    private boolean authEmAndamento = false;
 
-    public static void start(Context context, String userId) {
+    public static void start(Context context, String userId, String email, String senha) {
         if (userId == null || userId.isEmpty()) return;
-        
+
         Intent intent = new Intent(context, LocationService.class);
         intent.putExtra("userId", userId);
-        
+        intent.putExtra("email", email == null ? "" : email);
+        intent.putExtra("senha", senha == null ? "" : senha);
+
         SharedPreferences prefs = context.getSharedPreferences("EntregadorPrefs", MODE_PRIVATE);
-        prefs.edit().putString("userId", userId).apply();
+        prefs.edit().putString("userId", userId)
+                .putString("credEmail", email == null ? "" : email)
+                .putString("credSenha", senha == null ? "" : senha)
+                .apply();
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent);
@@ -123,7 +133,11 @@ public class LocationService extends Service {
             public void run() {
                 Log.d(TAG, "Heartbeat - Mantendo serviço vivo...");
                 if (userId != null && !userId.isEmpty()) {
-                    databaseReference.child("entregadores").child(userId).child("lastHeartbeat").setValue(System.currentTimeMillis());
+                    if (autenticado()) {
+                        databaseReference.child("entregadores").child(userId).child("lastHeartbeat").setValue(System.currentTimeMillis());
+                    } else {
+                        tryAuth();
+                    }
                 }
                 heartbeatHandler.postDelayed(this, 30000); // A cada 30 segundos
             }
@@ -140,9 +154,19 @@ public class LocationService extends Service {
 
         if (intent != null && intent.hasExtra("userId")) {
             userId = intent.getStringExtra("userId");
+            email = intent.hasExtra("email") ? intent.getStringExtra("email") : "";
+            senha = intent.hasExtra("senha") ? intent.getStringExtra("senha") : "";
             SharedPreferences prefs = getSharedPreferences("EntregadorPrefs", MODE_PRIVATE);
             prefs.edit().putString("userId", userId).apply();
+        } else if (userId == null || userId.isEmpty()) {
+            // Reinicio do sistema (START_STICKY): recupera credenciais salvas
+            SharedPreferences prefs = getSharedPreferences("EntregadorPrefs", MODE_PRIVATE);
+            userId = prefs.getString("userId", "");
+            email = prefs.getString("credEmail", "");
+            senha = prefs.getString("credSenha", "");
         }
+
+        tryAuth();
 
         if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire(24 * 60 * 60 * 1000L);
         if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
@@ -190,8 +214,41 @@ public class LocationService extends Service {
         }, 10000);
     }
 
+    // Autentica o servico no Firebase (exigido pelas regras de seguranca do banco)
+    private void tryAuth() {
+        try {
+            FirebaseAuth fa = FirebaseAuth.getInstance();
+            FirebaseUser u = fa.getCurrentUser();
+            if (u != null && userId.equals(u.getUid())) return; // ja autenticado corretamente
+            if (authEmAndamento || email == null || email.isEmpty() || senha == null || senha.isEmpty()) return;
+            authEmAndamento = true;
+            fa.signInWithEmailAndPassword(email, senha)
+                .addOnSuccessListener(r -> {
+                    authEmAndamento = false;
+                    Log.d(TAG, "Servico autenticado no Firebase");
+                })
+                .addOnFailureListener(e -> {
+                    authEmAndamento = false;
+                    Log.e(TAG, "Falha ao autenticar servico: " + e.getMessage());
+                    // tenta de novo em 15s
+                    heartbeatHandler.postDelayed(() -> tryAuth(), 15000);
+                });
+        } catch (Exception e) {
+            authEmAndamento = false;
+            Log.e(TAG, "Erro no tryAuth: " + e.getMessage());
+        }
+    }
+
+    private boolean autenticado() {
+        try {
+            FirebaseUser u = FirebaseAuth.getInstance().getCurrentUser();
+            return u != null && userId.equals(u.getUid());
+        } catch (Exception e) { return false; }
+    }
+
     private void sync(double lat, double lng) {
         if (userId == null || userId.isEmpty()) return;
+        if (!autenticado()) { tryAuth(); return; }
         
         Map<String, Object> data = new HashMap<>();
         data.put("lat", lat);

@@ -20,16 +20,17 @@
           }
         },
         "lastHeartbeat": {
-          ".write": true,
+          ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.isNumber()"
         }
       }
     },
     "entregas": {
-      ".read": "auth != null",
+      ".read": "auth != null && (root.child('admin').child(auth.uid).val() === true || (query.orderByChild === 'status' && (query.equalTo === 'pendente' || query.equalTo === 'aceite' || query.equalTo === 'em_transito')) || (query.orderByChild === 'entregadorId' && query.equalTo === auth.uid) || (query.orderByChild === 'empresaId' && query.equalTo === auth.uid))",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       ".indexOn": ["empresaId", "status", "entregadorId"],
       "$id": {
+        ".read": "auth != null && (data.child('empresaId').val() === auth.uid || data.child('entregadorId').val() === auth.uid || data.child('status').val() === 'pendente' || root.child('admin').child(auth.uid).val() === true)",
         ".write": "auth != null && ((!data.exists() && newData.child('empresaId').val() === auth.uid && root.child('empresas').child(auth.uid).exists() && root.child('aprovacoes').child(auth.uid).child('aprovado').val() === true) || (data.exists() && data.child('empresaId').val() === auth.uid) || (data.exists() && data.child('entregadorId').val() === auth.uid) || (data.exists() && data.child('status').val() === 'pendente' && newData.child('entregadorId').val() === auth.uid))"
       }
     },
@@ -38,7 +39,7 @@
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       "$uid": {
         ".read": "auth != null",
-        ".write": true,
+        ".write": "auth != null && (auth.uid === $uid || root.child('admin').child(auth.uid).val() === true)",
         "lat": { ".validate": "newData.isNumber()" },
         "lng": { ".validate": "newData.isNumber()" },
         "timestamp": { ".validate": "newData.isNumber()" },
@@ -48,7 +49,7 @@
       }
     },
     "mensagens": {
-      ".read": "auth != null",
+      ".read": "auth != null && (root.child('admin').child(auth.uid).val() === true || (query.orderByChild === 'empresaId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregadorId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregaId' && (root.child('entregas').child(query.equalTo).child('empresaId').val() === auth.uid || root.child('entregas').child(query.equalTo).child('entregadorId').val() === auth.uid)))",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       ".indexOn": ["entregadorId", "empresaId", "entregaId"],
       "$id": {
@@ -72,6 +73,7 @@
     },
     "aprovacoes": {
       ".read": "root.child('admin').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && (root.child('admin').child(auth.uid).val() === true || (!data.exists() && newData.child('criadoPor').val() === auth.uid))",
