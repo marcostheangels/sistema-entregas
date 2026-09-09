@@ -1,4 +1,16 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 08:40
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 12:50
+
+## 🔒 Auditoria de segurança (09/09/2026)
+Rodada completa de testes encontrou e corrigiu falhas nas regras do Firebase:
+- **GRAVE**: qualquer conta autenticada podia FALSIFICAR o GPS de qualquer entregador (`posicoes/$uid .write: true`) → agora só o próprio uid
+- Qualquer um lia TODAS as entregas e TODOS os chats → agora leitura isolada por query (empresaId/entregadorId/status)
+- `lastHeartbeat` era gravável por qualquer um → só o próprio uid
+- **Regras publicadas em produção** (`firebase deploy`, 87 testes PASS no emulador)
+- **APK do entregador ATUALIZADO é obrigatório**: o serviço nativo de GPS agora faz LOGIN no Firebase (Auth.jsx salva credenciais em localStorage na hora do login). APKs antigos param de rastrear em segundo plano até atualizar
+- Erros fixados durante os testes: emulador sem firebase.json (regras vazias), admin sem write na colecao aprovacoes, dependencia firebase-auth no build.gradle
+
+## 🐛 Outro bug encontrado (pendente de correção futura)
+- `entregador/public/manifest.json` aponta para ícones inexistentes (icon-192/512.png) e `start_url: "/"` quebra no GitHub Pages — corrigir como na empresa (favicon.svg + start_url relativo)
 
 **🌐 PUBLICADO ONLINE (GitHub Pages)** — repo: `marcostheangels/sistema-entregas`
 - Landing: https://marcostheangels.github.io/sistema-entregas/
