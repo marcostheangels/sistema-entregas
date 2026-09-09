@@ -7,7 +7,7 @@ import Dashboard from './Dashboard';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.8';
+export const APP_VERSAO = '1.4.9';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -80,6 +80,30 @@ function AguardandoAprovacao({ user, versao }) {
         >
           SAIR
         </button>
+        {versao && (
+          <div style={{textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 14}}>
+            ConectaEntregas Entregador · v{versao}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Conta de outro painel (ex.: empresa) tentando entrar no app do entregador: BLOQUEIA
+function ContaIncorreta({ user, tipo, versao }) {
+  const msg = tipo === 'empresa'
+    ? 'Este e-mail é uma conta de EMPRESA e não pode acessar o aplicativo do entregador. Use o painel ConectaEntregas Empresas no navegador.'
+    : 'Esta conta não é de entregador e não pode acessar este aplicativo.';
+  return (
+    <div className="auth-wrapper">
+      <div className="auth-card animate-fade" style={{textAlign: 'center'}}>
+        <div className="auth-header">
+          <div className="auth-logo">⛔</div>
+          <h1 className="auth-title">Conta incorreta</h1>
+          <p style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8, lineHeight: 1.5}}>{msg}</p>
+        </div>
+        <button className="btn-primary" style={{marginTop: 20}} onClick={() => signOut(auth)}>SAIR</button>
         {versao && (
           <div style={{textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 14}}>
             ConectaEntregas Entregador · v{versao}
@@ -199,6 +223,7 @@ function App() {
   const [temPerfil, setTemPerfil] = useState(true);
   const [perfilCarregando, setPerfilCarregando] = useState(true);
   const [dadosAprov, setDadosAprov] = useState(null);
+  const [tipoConta, setTipoConta] = useState(null); // 'entregador' | 'empresa' | ... — bloqueia login cruzado
   const [versaoMinima, setVersaoMinima] = useState(null);
 
   // Versao minima definida pelo Master: app antigo se auto-bloqueia (vale mesmo sem login)
@@ -217,10 +242,10 @@ function App() {
       setLoading(true);
       // Escuta a aprovacao EM TEMPO REAL: quando o admin aprovar, o app libera sozinho aqui mesmo
       unsubAprov = onValue(ref(db, `aprovacoes/${u.uid}`), s => {
-        if (s.exists()) { setAprovado(s.val().aprovado === true); setDadosAprov(s.val()); }
-        else setAprovado(null);
+        if (s.exists()) { setAprovado(s.val().aprovado === true); setDadosAprov(s.val()); setTipoConta(s.val().tipo || 'entregador'); }
+        else { setAprovado(null); setTipoConta(null); }
         setLoading(false);
-      }, () => { setAprovado(null); setLoading(false); });
+      }, () => { setAprovado(null); setTipoConta(null); setLoading(false); });
     });
     return () => { unsub(); if (unsubAprov) unsubAprov(); };
   }, []);
@@ -240,6 +265,8 @@ function App() {
   // o entregador NUNCA mais ve o formulario de cadastro por engano.
   useEffect(() => {
     if (!user || aprovado !== true || perfilCarregando || temPerfil || !dadosAprov) return;
+    // Conta de empresa/outra origem: NUNCA cria perfil de entregador
+    if (dadosAprov.tipo && dadosAprov.tipo !== 'entregador') return;
     set(ref(db, `entregadores/${user.uid}`), {
       nome: dadosAprov.nome || dadosAprov.nomeCompleto || '',
       email: user.email,
@@ -256,6 +283,9 @@ function App() {
   if (loading) return <div className="loading">Carregando...</div>;
 
   if (versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
+
+  // Login cruzado bloqueado: conta de empresa (ou outro tipo) NAO entra no app do entregador
+  if (user && tipoConta && tipoConta !== 'entregador') return <ContaIncorreta user={user} tipo={tipoConta} versao={APP_VERSAO} />;
 
   if (user && aprovado === false) return <AguardandoAprovacao user={user} versao={APP_VERSAO} />;
 

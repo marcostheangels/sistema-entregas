@@ -1,7 +1,18 @@
 import { useState } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
-import { ref, set } from 'firebase/database';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail, signOut } from 'firebase/auth';
+import { ref, set, get } from 'firebase/database';
 import { auth, db } from './firebase';
+
+// Login cruzado: conta de EMPRESA (ou outro tipo) nao entra no app do entregador.
+// Desloga na hora e devolve uma mensagem explicativa.
+const verificarTipoConta = async (uid) => {
+  try {
+    const a = await get(ref(db, `aprovacoes/${uid}`));
+    const tipo = a.val()?.tipo;
+    if (tipo && tipo !== 'entregador') return tipo;
+  } catch { /* se falhar a leitura, deixa o App.jsx bloquear pelo listener */ }
+  return null;
+};
 
 export default function Auth({ onAuth, versao }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -54,6 +65,15 @@ export default function Auth({ onAuth, versao }) {
 
       if (isLogin) {
         const cred = await signInWithEmailAndPassword(auth, email, senha);
+        // Bloqueia conta de empresa/outra origem ANTES de qualquer coisa
+        const tipoBloqueado = await verificarTipoConta(cred.user.uid);
+        if (tipoBloqueado) {
+          await signOut(auth);
+          setError(tipoBloqueado === 'empresa'
+            ? '⚠️ Esta conta é de EMPRESA. Use o painel ConectaEntregas Empresas no navegador — este aplicativo é só para entregadores.'
+            : '⚠️ Esta conta não é de entregador.');
+          return;
+        }
         // Auto-reparo: se o perfil foi apagado (ex.: reset pelo admin), recria a partir da aprovacao
         try {
           const p = await get(ref(db, `entregadores/${cred.user.uid}`));
@@ -89,6 +109,15 @@ export default function Auth({ onAuth, versao }) {
             // E-mail ja existe no Firebase Auth (ex.: cadastro anterior apagado no reset):
             // entra com a senha informada e reaproveita a conta
             cred = await signInWithEmailAndPassword(auth, email, senha);
+            // Bloqueia conta de empresa/outra origem reutilizada no cadastro
+            const tipoBloqueado = await verificarTipoConta(cred.user.uid);
+            if (tipoBloqueado) {
+              await signOut(auth);
+              setError(tipoBloqueado === 'empresa'
+                ? '⚠️ Este e-mail já é uma conta de EMPRESA. Use o painel ConectaEntregas Empresas no navegador — este aplicativo é só para entregadores.'
+                : '⚠️ Este e-mail já tem uma conta que não é de entregador.');
+              return;
+            }
           } else {
             throw errCadastro;
           }

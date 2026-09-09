@@ -83,6 +83,18 @@ function Login({ onAuth }) {
         onAuth(cred.user);
       } else {
         const cred = await signInWithEmailAndPassword(auth, email, senha);
+        // Login cruzado: conta de ENTREGADOR (ou outro tipo) nao entra no painel da empresa
+        try {
+          const a = await get(ref(db, `aprovacoes/${cred.user.uid}`));
+          const tipo = a.val()?.tipo;
+          if (tipo && tipo !== 'empresa') {
+            await signOut(auth);
+            throw { code: 'conta-nao-empresa' };
+          }
+        } catch (errTipo) {
+          if (errTipo.code === 'conta-nao-empresa') throw errTipo;
+          // leitura falhou: deixa o listener do App bloquear
+        }
         onAuth(cred.user);
       }
     } catch (err) {
@@ -92,7 +104,8 @@ function Login({ onAuth }) {
         'auth/weak-password': 'A senha deve ter pelo menos 6 caracteres.',
         'auth/user-not-found': 'E-mail ou senha incorretos.',
         'auth/invalid-credential': 'E-mail ou senha incorretos.',
-        'auth/email-ja-cadastrado-outra-senha': '⚠️ Este e-mail JÁ está cadastrado com uma senha diferente. Faça LOGIN com a senha antiga ou clique em "Esqueci minha senha" para redefinir e depois complete o cadastro.'
+        'auth/email-ja-cadastrado-outra-senha': '⚠️ Este e-mail JÁ está cadastrado com uma senha diferente. Faça LOGIN com a senha antiga ou clique em "Esqueci minha senha" para redefinir e depois complete o cadastro.',
+        'conta-nao-empresa': '⚠️ Esta conta é de ENTREGADOR. Use o aplicativo ConectaEntregas Entregador — este painel é só para empresas.'
       };
       setErro(map[err.code] || 'Erro ao entrar: ' + err.message);
     } finally {
@@ -140,15 +153,18 @@ function App() {
   const [initializing, setInitializing] = useState(true);
   const [aprovado, setAprovado] = useState(false); // so entra com aprovacao explicita do admin
   const [recusado, setRecusado] = useState(false); // cadastro excluido/recusado pelo Master
+  const [contaErrada, setContaErrada] = useState(false); // conta de entregador tentando o painel da empresa
 
   useEffect(() => {
     let unsubAprov = null;
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (unsubAprov) { unsubAprov(); unsubAprov = null; }
-      if (!u) { setAprovado(false); setInitializing(false); return; }
+      if (!u) { setAprovado(false); setContaErrada(false); setInitializing(false); return; }
       // Escuta o registro de aprovacao; se nao existir (cadastro antigo/resetado), cria a solicitacao
       unsubAprov = onValue(ref(db, `aprovacoes/${u.uid}`), s => {
+        // Login cruzado: conta de entregador NUNCA entra aqui nem cria solicitacao de empresa
+        if (s.exists() && s.val().tipo === 'entregador') { setContaErrada(true); setAprovado(false); setInitializing(false); return; }
         if (!s.exists()) {
           // Nao cria solicitacao para a conta de administrador
           get(ref(db, `admin/${u.uid}`)).then(adm => {
@@ -156,10 +172,14 @@ function App() {
               // Cadastro recusado pelo Master: NAO recria a solicitacao
               return get(ref(db, `recusados/${u.uid}`)).then(rec => {
                 if (rec.val()) { setRecusado(true); return null; }
-                return get(ref(db, `empresas/${u.uid}`)).then(perf => {
-                  return set(ref(db, `aprovacoes/${u.uid}`), {
-                    tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
-                    aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
+                // Perfil de ENTREGADOR existe: e conta de entregador, nao cria e bloqueia
+                return get(ref(db, `entregadores/${u.uid}`)).then(ent => {
+                  if (ent.exists()) { setContaErrada(true); return null; }
+                  return get(ref(db, `empresas/${u.uid}`)).then(perf => {
+                    return set(ref(db, `aprovacoes/${u.uid}`), {
+                      tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
+                      aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
+                    });
                   });
                 });
               });
@@ -201,6 +221,23 @@ function App() {
         <h2 style={{color:'#f87171', margin:'12px 0'}}>Cadastro recusado</h2>
         <p style={{color:'#94a3b8', fontSize:'0.9rem', lineHeight:1.5}}>
           Este cadastro foi recusado pelo administrador. Se foi um engano, entre em contato conosco para resolver.
+        </p>
+        <button
+          onClick={() => signOut(auth)}
+          style={{marginTop:18, padding:'10px 28px', borderRadius:10, border:'none', background:'#6366f1', color:'white', fontWeight:700, cursor:'pointer'}}
+        >SAIR</button>
+      </div>
+    </div>
+  );
+
+  if (user && contaErrada) return (
+    <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f172a', padding:20}}>
+      <div style={{maxWidth:420, textAlign:'center', background:'#1e293b', border:'1px solid #334155', borderRadius:16, padding:'32px 24px'}}>
+        <div style={{fontSize:44}}>🛵</div>
+        <h2 style={{color:'#f87171', margin:'12px 0'}}>Conta incorreta</h2>
+        <p style={{color:'#94a3b8', fontSize:'0.9rem', lineHeight:1.5}}>
+          Esta conta é de <strong>ENTREGADOR</strong> e não pode acessar o painel da empresa.<br /><br />
+          Use o aplicativo <strong>ConectaEntregas Entregador</strong> no celular.
         </p>
         <button
           onClick={() => signOut(auth)}
