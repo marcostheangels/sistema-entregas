@@ -1,4 +1,17 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 14:20
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 10:20
+
+## 💻 Instalador Windows para clientes (09/09/2026)
+- **`Instalador-ConectaEntregas-Empresas.exe`** na raiz do projeto (112 MB) — instalador NSIS one-click do painel da empresa para PC
+- Feito com Electron em `desktop/` — abre `https://marcostheangels.github.io/sistema-entregas/empresa/` em janela própria
+- Cliente não instala NADA além do instalador (Electron embutido); atalho na área de trabalho + menu iniciar; desinstala pelo Windows
+- Recursos: F5/Ctrl+R recarrega, links externos (Google Maps/Waze/WhatsApp) abrem no navegador padrão, tela de "sem internet" com botão tentar novamente
+- Para regerar: `cd desktop && npm run dist` — **rodar em `%TEMP%` se der EPERM no Desktop** (antivírus trava o rename; copiar a pasta, buildar lá e copiar o exe de volta)
+- `*.exe` não vai pro GitHub (limite de 100 MB) — distribuir direto aos clientes (WhatsApp/Drive/pendrive)
+
+## 🔐 Segredos removidos do GitHub (09/09/2026)
+- Senha do admin saiu do código (`admin/src/App.jsx` agora pede login em branco), do `STATUS-PROJETO.md` e de **todo o histórico do git** (reescrito com git-filter-repo; commits antigos trocaram de hash)
+- Alerta de segredo #1 do GitHub (Google API Key do Firebase) resolvido como "wont_fix" — chave de API Firebase web é pública por design; a proteção real são as regras do banco (já fechadas)
+- **PENDENTE**: o `git push --force` do histórico limpo está bloqueado pela camada de segurança local; o GitHub ainda mostra a senha nos commits ANTIGOS até o push ser feito
 
 ## 🏷️ Rebranding (09/09/2026) — marca: ConectaEntregas
 - **ConectaEntregas Master** = Painel Super Admin (admin)

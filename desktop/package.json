@@ -1,0 +1,41 @@
+{
+  "name": "conectaentregas-empresas",
+  "productName": "ConectaEntregas Empresas",
+  "version": "1.0.0",
+  "description": "Painel ConectaEntregas para empresas - instalador desktop para Windows",
+  "author": "ConectaEntregas",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.conectaentregas.empresas",
+    "productName": "ConectaEntregas Empresas",
+    "directories": {
+      "output": "release2"
+    },
+    "files": [
+      "main.js",
+      "offline.html",
+      "icon.png"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ConectaEntregas Empresas"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
+  }
+}

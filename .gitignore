@@ -10,6 +10,11 @@ www/
 # APKs (artefatos de build, não versionar)
 *.apk
 
+# Instalador Windows (acima do limite de 100MB do GitHub, não versionar)
+*.exe
+desktop/release/
+desktop/release2/
+
 # Lixo
 ]
 .DS_Store
