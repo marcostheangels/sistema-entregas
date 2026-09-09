@@ -8,10 +8,10 @@
 - APK regenerado (docs/apk + raiz), 3 apps publicados no Pages. Dica: para o e-mail de reset ficar em PT-BR, ajuste o template em Firebase Console > Authentication > Templates
 
 ## 📱 Atualização obrigatória do app (sem Play Store) (09/09/2026)
-- App do entregador tem constante `APP_VERSAO` (hoje `1.3.0`) em `entregador/src/App.jsx` — **aumentar a cada release**
-- Master define "Versão mínima" no painel (`config/versaoMinima.app`): app antigo mostra tela de bloqueio com botão que baixa o APK novo direto de `https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk`
-- APK público fica em `docs/apk/App-Entregador.apk` (exceção no .gitignore) — **copiar o APK novo para lá a cada release antes do push**
-- Fluxo de release do entregador: bump APP_VERSAO → build APK → copiar p/ raiz e docs/apk/ → push → (opcional) subir versão mínima no Master
+- App do entregador tem constante `APP_VERSAO` (hoje `1.4.1`) em `entregador/src/App.jsx` — **aumentar a cada release**
+- Master define "Versão mínima" no painel (`config/versaoMinima.app`): app antigo mostra tela de bloqueio com botão que baixa o APK novo
+- **APK público com nome `docs/apk/ConectaEntregas-{VERSAO}.apk`** (ex.: `ConectaEntregas-1.4.1.apk`) — a URL no app é montada com a própria versão (`URL_APK` em `entregador/src/App.jsx`)
+- Fluxo de release do entregador: bump APP_VERSAO → build APK → copiar p/ raiz e `docs/apk/ConectaEntregas-{VERSAO}.apk` (excluir o apk antigo de docs/apk) → push → (opcional) subir versão mínima no Master
 - Pedidos antigos sem código: geram código no aceite (fix 12:41)
 
 ## 🚀 Pacote iFood/99 — comprovante, taxa, pagamento e rastreio (09/09/2026)
