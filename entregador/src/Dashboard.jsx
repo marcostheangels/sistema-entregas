@@ -966,7 +966,6 @@ export default function Dashboard({ user, versao }) {
       setEntregaEmRota(null);
       setRotaInfo(null);
       setMensagemNova(null);
-      setResposta('');
       lastMsgTs.current = Date.now();
       // Apaga o historico de mensagens desta entrega na hora
       try {
