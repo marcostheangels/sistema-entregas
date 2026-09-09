@@ -1,4 +1,13 @@
-# 📌 STATUS DO PROJETO — Salvo em 08/09/2026 às 21:33
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 08:40
+
+**🌐 PUBLICADO ONLINE (GitHub Pages)** — repo: `marcostheangels/sistema-entregas`
+- Landing: https://marcostheangels.github.io/sistema-entregas/
+- Empresa: https://marcostheangels.github.io/sistema-entregas/empresa/
+- Entregador: https://marcostheangels.github.io/sistema-entregas/entregador/
+- Admin: https://marcostheangels.github.io/sistema-entregas/admin/
+
+**Para atualizar o site**: `npm run build` em cada app alterado → copiar `dist` para
+`docs/<app>` → `git add -A && git commit -m "deploy" && git push` (Pages recompila sozinho em ~1 min).
 
 Sistema de entregas: **App da Empresa** + **App do Entregador** + **Painel Admin**, com
 Firebase Realtime Database e APKs Android (Capacitor).
