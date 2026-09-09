@@ -123,24 +123,34 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  // Desenha a rota de estrada (OSRM) — ambar buscando o pedido, verde levando
+  // Desenha a rota de estrada (OSRM) — azul buscando, verde levando.
+  // A prova de falhas: cria a fonte/camada se ainda nao existem e tenta de novo
+  // no 'idle' quando o estilo nao terminou de carregar (causa classica de rota invisivel)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    const aplicar = () => {
-      const src = map.getSource('rota');
-      if (!src) return;
-      src.setData({
-        type: 'FeatureCollection',
-        features: rotaInfo?.coords?.length
-          ? [{ type: 'Feature', geometry: { type: 'LineString', coordinates: rotaInfo.coords } }]
-          : []
-      });
-      if (map.getLayer('linha-rota')) {
-        map.setPaintProperty('linha-rota', 'line-color', rotaInfo?.cor || '#6366f1');
+    if (!map || !rotaInfo?.coords?.length) return;
+    const desenhar = () => {
+      try {
+        if (!map.getSource('rota')) {
+          map.addSource('rota', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+          map.addLayer({
+            id: 'linha-rota', type: 'line', source: 'rota',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': '#6366f1', 'line-width': 7, 'line-opacity': 0.9 }
+          });
+        }
+        map.getSource('rota').setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: rotaInfo.coords } }]
+        });
+        if (map.getLayer('linha-rota')) {
+          map.setPaintProperty('linha-rota', 'line-color', rotaInfo.cor || '#6366f1');
+        }
+      } catch {
+        map.once('idle', desenhar);
       }
     };
-    if (prontoRef.current) aplicar(); else map.once('load', aplicar);
+    if (map.isStyleLoaded()) desenhar(); else map.once('load', desenhar);
   }, [rotaInfo]);
 
   // Marcadores de coleta (empresa) e destino (casa)
@@ -1142,15 +1152,18 @@ export default function Dashboard({ user, versao }) {
       // Se não, calculamos apenas entre os pontos da entrega.
       const p = posicao || { lat: oLat, lng: oLng };
 
-      // OSRM com timeout de 8s: se falhar, usamos linha reta (a rota real tenta de novo no proximo movimento)
+      // OSRM com timeout de 8s e ate 3 rotas alternativas: fica sempre com a MENOR.
+      // Se falhar, usamos linha reta (a rota real tenta de novo no proximo movimento)
       const osrm = async (wp) => {
         try {
           const ctl = new AbortController();
           const to = setTimeout(() => ctl.abort(), 8000);
-          const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${wp}?overview=full&geometries=geojson`, { signal: ctl.signal });
+          const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${wp}?overview=full&geometries=geojson&alternatives=3`, { signal: ctl.signal });
           clearTimeout(to);
           const d = await res.json();
-          return d.routes?.[0] || null;
+          if (!d.routes?.length) return null;
+          // Menor rota por distancia (igual Waze/Google mostrando o caminho curto)
+          return d.routes.reduce((melhor, r) => (r.distance < melhor.distance ? r : melhor), d.routes[0]);
         } catch { return null; }
       };
 

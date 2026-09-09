@@ -37,7 +37,10 @@
   .passos { list-style: none; margin-top: 12px; }
   .passos li { padding: 7px 0; font-size: 0.86rem; color: #64748b; display: flex; gap: 9px; align-items: center; }
   .passos li.fei { color: #34d399; }
-  .passos li.atu { color: #f8fafc; font-weight: 700; }
+  .passos li.atu { color: #34d399; font-weight: 700; }
+  .passos li.atu .passo-ico { display: inline-flex; width: 18px; height: 18px; border-radius: 50%; background: #10b981; color: #04250f; font-size: 11px; font-weight: 900; align-items: center; justify-content: center; animation: pulsaico 1.2s ease-in-out infinite; }
+  .passos li.fut { color: #475569; }
+  @keyframes pulsaico { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
   .mapa { height: 320px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px; }
   #map { height: 100%; }
   .erro { text-align: center; padding: 60px 20px; }
@@ -107,7 +110,12 @@
           <div class="status-grande"><span class="bolinha ${d.status === 'entregue' ? 'ativa' : ''}" style="background:${corBola}"></span>${nomeStatus.toUpperCase()}</div>
           <p class="sub">${destaque}</p>
           <ul class="passos">
-            ${PASSOS.map((p, j) => `<li class="${j < i ? 'fei' : (j === i ? 'atu' : '')}">${j < i ? '✔' : (j === i ? '➤' : '·')} ${p.t.replace(/^[^\s]+\s/, '')}</li>`).join('')}
+            ${PASSOS.map((p, j) => {
+              const txt = p.t.replace(/^[^\s]+\s/, '');
+              if (j < i) return `<li class="fei">✔ ${txt}</li>`;
+              if (j === i) return `<li class="atu"><span class="passo-ico">✔</span> ${txt}</li>`;
+              return `<li class="fut">· ${txt}</li>`;
+            }).join('')}
           </ul>
         </div>
         <div class="mapa"><div id="map"></div></div>
