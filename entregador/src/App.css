@@ -244,14 +244,17 @@
 
 .dot-online { background: var(--success); box-shadow: 0 0 8px var(--success); }
 .dot-offline { background: var(--danger); }
+.status-indicator .dot { background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, 0.9); }
 
 .btn-icon-danger {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  color: var(--danger);
+  background: rgba(239, 68, 68, 0.85);
+  border: 2px solid #f87171;
+  color: #fff;
+  font-weight: 900;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;

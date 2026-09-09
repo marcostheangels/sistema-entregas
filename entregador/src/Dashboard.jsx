@@ -1090,6 +1090,12 @@ export default function Dashboard({ user, versao }) {
       pedirPermissao();
       return;
     }
+    // Bloqueio: com entrega em andamento nao pode ficar offline — so depois de entregar
+    if (!status && entregaAtual && (entregaAtual.status === 'aceite' || entregaAtual.status === 'em_transito')) {
+      addLog('Bloqueado: finalize a entrega antes de ficar offline');
+      alert('⚠️ Você está com uma ENTREGA EM ANDAMENTO!\n\nEntregue o pedido para poder ficar OFFLINE.');
+      return;
+    }
     setIsOnline(status);
     onlineRef.current = status;
 
@@ -1274,15 +1280,31 @@ export default function Dashboard({ user, versao }) {
             onClick={() => toggleTracking(!isOnline)}
             className="status-indicator"
             style={{
-               border: 'none',
-               background: isOnline ? 'rgba(16, 185, 129, 0.2)' : (permissoesOk ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.25)'),
+               border: '2px solid ' + (isOnline ? '#10b981' : (permissoesOk ? '#f87171' : '#f59e0b')),
+               background: isOnline ? '#10b981' : (permissoesOk ? 'rgba(239, 68, 68, 0.85)' : 'rgba(245, 158, 11, 0.9)'),
+               color: isOnline ? '#04250f' : '#fff',
+               fontWeight: 900,
+               fontSize: '0.8rem',
+               letterSpacing: '0.04em',
+               boxShadow: isOnline ? '0 0 12px rgba(16, 185, 129, 0.55)' : '0 0 12px rgba(239, 68, 68, 0.45)',
                cursor: 'pointer'
             }}
           >
             <div className={`dot ${isOnline ? 'dot-online' : 'dot-offline'}`}></div>
             {isOnline ? 'ONLINE' : (permissoesOk ? 'OFFLINE' : 'SEM PERMISSÃO')}
           </button>
-          <button className="btn-icon-danger" onClick={() => { if (onlineRef.current) toggleTracking(false); signOut(auth); }}><IconLogout /></button>
+          <button
+            className="btn-icon-danger"
+            title="Sair"
+            onClick={() => {
+              if (entregaAtual && (entregaAtual.status === 'aceite' || entregaAtual.status === 'em_transito')) {
+                alert('⚠️ Você está com uma ENTREGA EM ANDAMENTO!\n\nEntregue o pedido antes de sair do aplicativo.');
+                return;
+              }
+              if (onlineRef.current) toggleTracking(false);
+              signOut(auth);
+            }}
+          ><IconLogout /></button>
         </div>
       </nav>
 
