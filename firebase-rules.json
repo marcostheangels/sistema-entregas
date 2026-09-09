@@ -64,6 +64,7 @@
     },
     "config": {
       ".read": "auth != null",
+      "versaoMinima": { ".read": true },
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
     },
     "mensagens": {

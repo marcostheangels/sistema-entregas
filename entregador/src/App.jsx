@@ -7,7 +7,7 @@ import Dashboard from './Dashboard';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.3.0';
+export const APP_VERSAO = '1.3.1';
 const URL_APK = 'https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk';
 
 // Compara "1.2.3" com "1.10.0" corretamente
@@ -198,12 +198,11 @@ function App() {
   const [dadosAprov, setDadosAprov] = useState(null);
   const [versaoMinima, setVersaoMinima] = useState(null);
 
-  // Versao minima definida pelo Master: app antigo se auto-bloqueia
+  // Versao minima definida pelo Master: app antigo se auto-bloqueia (vale mesmo sem login)
   useEffect(() => {
-    if (!user) { setVersaoMinima(null); return; }
     const unsub = onValue(ref(db, 'config/versaoMinima'), snap => setVersaoMinima(snap.val()?.app || null), () => {});
     return unsub;
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     let unsubAprov = null;
@@ -235,13 +234,13 @@ function App() {
 
   if (loading) return <div className="loading">Carregando...</div>;
 
-  if (user && versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
+  if (versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
 
   if (user && aprovado === false) return <AguardandoAprovacao user={user} versao={APP_VERSAO} />;
 
   if (user && !perfilCarregando && !temPerfil) return <CompletarCadastro user={user} dados={dadosAprov} />;
 
-  return user ? <Dashboard user={user} /> : <Auth onAuth={setUser} versao={APP_VERSAO} />;
+  return user ? <Dashboard user={user} versao={APP_VERSAO} /> : <Auth onAuth={setUser} versao={APP_VERSAO} />;
 }
 
 export default App;

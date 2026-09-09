@@ -649,7 +649,7 @@ const tocarChimeMensagem = () => {
   } catch { /* dispositivo sem audio */ }
 };
 
-export default function Dashboard({ user }) {
+export default function Dashboard({ user, versao }) {
   const [entregas, setEntregas] = useState([]);
   const [statusFiltro, setStatusFiltro] = useState('disponivel');
   const entregasVistasRef = useRef(new Set());
@@ -1176,6 +1176,11 @@ export default function Dashboard({ user }) {
         <div className="nav-brand">
           <img src={`${import.meta.env.BASE_URL}logo-192.png`} alt="" style={{width:'34px', height:'34px', borderRadius:'8px', marginRight:'8px', verticalAlign:'middle'}} />
           <h1 style={{display:'inline-block', verticalAlign:'middle'}}>CONECTA<span>ENTREGAS</span></h1>
+          {versao && (
+            <span style={{display:'inline-block', verticalAlign:'middle', marginLeft:'8px', fontSize:'0.62rem', fontWeight:700,
+                          color:'#94a3b8', background:'rgba(148,163,184,0.15)', border:'1px solid rgba(148,163,184,0.3)',
+                          borderRadius:'6px', padding:'2px 6px'}}>v{versao}</span>
+          )}
         </div>
         <div className="nav-actions">
           <button
