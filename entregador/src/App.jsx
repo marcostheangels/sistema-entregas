@@ -7,10 +7,7 @@ import Dashboard from './Dashboard';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.4';
-// APK publico para download no bloqueio de atualizacao: LINK FIXO, sempre aponta
-// para a versao mais recente publicada (nome com versao fica no atributo download)
-const URL_APK = 'https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas.apk';
+export const APP_VERSAO = '1.4.5';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -23,28 +20,31 @@ const versaoMenorQue = (a, b) => {
   return false;
 };
 
-// Tela de bloqueio: versao antiga e obrigada a atualizar (APK direto do site, sem Play Store)
+// Tela de bloqueio: versao antiga e obrigada a atualizar (APK direto do site, sem Play Store).
+// O link usa a VERSAO-DESTINO no nome do arquivo (ex.: ConectaEntregas-1.4.5.apk),
+// publicada junto da release — o entregador ve claramente o que esta baixando.
 function AtualizacaoObrigatoria({ atual, minima }) {
+  const alvo = minima || atual;
   return (
     <div className="login-container">
       <div className="login-card" style={{textAlign: 'center'}}>
         <div style={{fontSize: '3rem', marginBottom: 12}}>🚨</div>
         <h1>Atualização obrigatória</h1>
         <p>
-          Seu app está na versão <strong>{atual}</strong> e a mínima agora é a <strong>{minima}</strong>.<br />
+          Seu app está na versão <strong>{atual}</strong> e a mínima agora é a <strong>{alvo}</strong>.<br />
           Atualize para continuar trabalhando — é rápido e não perde seus dados.
         </p>
         <a
-          href={URL_APK}
-          download={`ConectaEntregas-${minima || atual}.apk`}
+          href={`https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas-${alvo}.apk`}
+          download={`ConectaEntregas-${alvo}.apk`}
           style={{display: 'block', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff',
                   borderRadius: 12, padding: '14px', fontFamily: 'Archivo, sans-serif', fontWeight: 800,
                   fontSize: '0.9rem', letterSpacing: '0.05em', textDecoration: 'none', marginTop: 8}}
         >
-          ⬇️ BAIXAR ATUALIZAÇÃO
+          ⬇️ BAIXAR v{alvo}
         </a>
         <p style={{fontSize: '0.72rem', marginTop: 12, lineHeight: 1.6}}>
-          Baixou? Toque no arquivo e confirme a instalação.<br />
+          Baixou? Toque no arquivo <strong>ConectaEntregas-{alvo}.apk</strong> e confirme a instalação.<br />
           Depois toque em "já atualizei" abaixo.
         </p>
         <button
