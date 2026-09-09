@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.3.3';
+const APP_VERSAO_ENTREGADOR = '1.3.4';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -89,7 +89,7 @@ function MapaTempoReal({ posicoes, entregas, entregadores }) {
     .map(([id, p]) => ({
       id, p,
       perfil: entregadores[id] || {},
-      entrega: entregas.find(e => e.entregadorId === id && (e.status === 'aceite' || e.status === 'em_transito')) || null
+      entrega: entregas.find(e => e.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(e.status)) || null
     }));
 
   useEffect(() => {
@@ -178,7 +178,7 @@ function PainelAprovacoes({ user }) {
 
   // Dados ao vivo para a visao geral e o monitor de entregas
   useEffect(() => {
-    const q = query(ref(db, 'entregas'), orderByChild('criadoEm'));
+    const q = query(ref(db, 'entregas'), orderByChild('createdAt'));
     const u1 = onValue(q, snap => {
       const list = [];
       snap.forEach(c => list.push({ id: c.key, ...c.val() }));

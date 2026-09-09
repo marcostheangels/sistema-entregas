@@ -1306,6 +1306,10 @@ export default function Dashboard({ user, versao }) {
                       // Espelho publico de rastreio: cliente passa a ver o status
                       rastreioAtivoRef.current = item.id;
                       update(ref(db, `rastreio/${item.id}`), { status: 'aceite', aceiteEm: Date.now() }).catch(() => {});
+                      // Abre a navegacao na hora, estilo Uber: rota ambar ate a coleta
+                      const aceita = { ...item, status: 'aceite', entregadorId: user.uid };
+                      setEntregaEmRota(aceita);
+                      calcRoute(aceita, false);
                     }
                   } else if (item.status === 'aceite') {
                     // Abre a navegacao em modo BUSCANDO O PEDIDO (confirma a coleta no mapa)
