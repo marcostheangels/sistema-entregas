@@ -1,4 +1,9 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 11:10
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 11:55
+
+## ⏳➡️✅ Aprovação em tempo real + permissões obrigatórias (09/09/2026)
+- Tela "Cadastro em análise" agora escuta o banco em tempo real: quando o admin aprova, o app do entregador **abre sozinho** (sem SAIR/logar de novo); texto atualizado para avisar isso
+- **Permissão de localização obrigatória** para ficar online: app aberto sem permissão mostra banner âmbar + botão "SEM PERMISSÃO"; clicar em ficar online dispara o pedido de permissão e só conecta após conceder; se negar, instruções de ir em Informações do app > Permissões > Localização > Permitir o tempo todo
+- `App-Entregador.apk` regenerado (instalar nos celulares)
 
 ## 🐛 CRÍTICO corrigido: APKs abriam em tela branca (09/09/2026)
 - **Causa**: o `vite.config.js` usava base absoluta `/sistema-entregas/<app>/` (do GitHub Pages) — dentro do WebView Android esse caminho não existe e o JS não carregava
