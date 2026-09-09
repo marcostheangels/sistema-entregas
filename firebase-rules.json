@@ -56,6 +56,16 @@
         ".write": "auth != null"
       }
     },
+    "presenca": {
+      ".read": "auth != null && root.child('admin').child(auth.uid).val() === true",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        "online": { ".validate": "newData.isBoolean()" },
+        "email": { ".validate": true },
+        "ultimoAviso": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
     "comprovantes": {
       "$id": {
         ".read": "auth != null",

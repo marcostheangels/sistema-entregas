@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth } from './firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { ref, get, set, onValue } from 'firebase/database';
+import { ref, get, set, onValue, update, onDisconnect } from 'firebase/database';
 import { db } from './firebase';
 import Dashboard from './Dashboard';
 import './App.css';
@@ -163,6 +163,22 @@ function App() {
     });
     return () => { unsub(); if (unsubAprov) unsubAprov(); };
   }, []);
+
+  // Presenca: avisa ao Master que esta empresa esta usando o painel agora (some sozinha ao fechar)
+  useEffect(() => {
+    if (!user || !aprovado) return;
+    const presencaRef = ref(db, `presenca/${user.uid}`);
+    set(presencaRef, { online: true, email: user.email, ultimoAviso: Date.now() }).catch(() => {});
+    onDisconnect(presencaRef).remove().catch(() => {});
+    const t = setInterval(() => {
+      update(presencaRef, { ultimoAviso: Date.now() }).catch(() => {});
+      onDisconnect(presencaRef).remove().catch(() => {});
+    }, 30000);
+    return () => {
+      clearInterval(t);
+      set(presencaRef, null).catch(() => {});
+    };
+  }, [user, aprovado]);
 
   if (initializing) return <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>Iniciando...</div>;
 

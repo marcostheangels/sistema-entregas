@@ -164,6 +164,7 @@ function PainelAprovacoes({ user }) {
   const [entregas, setEntregas] = useState([]);
   const [posicoes, setPosicoes] = useState({});
   const [entregadores, setEntregadores] = useState({});
+  const [presenca, setPresenca] = useState({});
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'aprovacoes'), snap => setSolicitacoes(snap.val() || {}));
@@ -180,7 +181,15 @@ function PainelAprovacoes({ user }) {
     });
     const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
     const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
-    return () => { u1(); u2(); u3(); };
+    const u4 = onValue(ref(db, 'presenca'), snap => setPresenca(snap.val() || {}));
+    return () => { u1(); u2(); u3(); u4(); };
+  }, []);
+
+  // Tick para expirar presencas antigas sem novas gravacoes
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick(x => x + 1), 30000);
+    return () => clearInterval(t);
   }, []);
 
   // Metricas do dia
@@ -190,6 +199,9 @@ function PainelAprovacoes({ user }) {
   const emAndamento = entregas.filter(e => e.status === 'aceite' || e.status === 'em_transito');
   const agora = Date.now();
   const onlineAgora = Object.values(posicoes).filter(p => p.online && agora - (p.timestamp || 0) < 120000).length;
+  // Empresas usando o painel agora (presenca com aviso recente)
+  const empresasOnline = Object.entries(presenca).filter(([, p]) => p && p.online && agora - (p.ultimoAviso || 0) < 90000);
+  const nomeEmpresaOnline = (id) => solicitacoes?.[id]?.nome || presenca[id]?.email || 'Empresa';
   // Ultimas entregas (mais recentes primeiro)
   const ultimasEntregas = [...entregas].sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0)).slice(0, 8);
   const nomeEntregador = (e) => e.entregadorNome || entregadores[e.entregadorId]?.nome || '—';
@@ -434,9 +446,35 @@ function PainelAprovacoes({ user }) {
           <h3>📡 Online agora</h3>
           <p style={{color: '#10b981'}}>{onlineAgora}</p>
         </div>
+        <div className="admin-stat">
+          <h3>🏢 Empresas online</h3>
+          <p style={{color: '#818cf8'}}>{empresasOnline.length}</p>
+        </div>
       </div>
 
       <MapaTempoReal posicoes={posicoes} entregas={entregas} entregadores={entregadores} />
+
+      <div className="admin-mapa-section">
+        <h4>🏢 Empresas usando o painel agora ({empresasOnline.length})</h4>
+        {empresasOnline.length === 0 ? (
+          <div className="admin-vazio">Nenhuma empresa está com o painel aberto agora.</div>
+        ) : (
+          <div className="admin-empresas-grid">
+            {empresasOnline.map(([id, p]) => {
+              const minAtras = Math.floor((agora - (p.ultimoAviso || 0)) / 60000);
+              return (
+                <div key={id} className="admin-empresa-online">
+                  <span className="rel-ponto livre" />
+                  <div className="rel-info">
+                    <strong>{nomeEmpresaOnline(id)}</strong>
+                    <small>{p.email || ''} · ativa {minAtras < 1 ? 'poucos segundos atrás' : `${minAtras} min atrás`}</small>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div className="admin-stats admin-grupos">
         <button className={`admin-stat admin-grupo ${grupo === 'entregadores' ? 'active' : ''}`} onClick={() => setGrupo('entregadores')}>

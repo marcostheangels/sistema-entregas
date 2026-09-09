@@ -343,3 +343,19 @@ body {
   .admin-mapa { height: 260px; }
   .admin-relatorio { max-height: 260px; }
 }
+
+/* Empresas online agora */
+.admin-empresas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.admin-empresa-online {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
