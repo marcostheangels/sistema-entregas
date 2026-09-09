@@ -387,6 +387,7 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
   const [, setTick] = useState(0);
   const [rota, setRota] = useState(null); // { chave, coords }
   const ultimaRotaPos = useRef(null);
+  const iconCache = useRef({});
 
   // Entrega em andamento desta empresa (prioriza quem ja esta levando o pedido)
   const entregaRota = entregas.find(e => e.status === 'em_transito') || entregas.find(e => e.status === 'aceite');
@@ -441,6 +442,13 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
     });
   };
 
+  // Icone com cache: evita recriar/reaplicar o icone a cada atualizacao de GPS
+  const getIcon = (nome, online, bloqueado, semSinal) => {
+    const k = `${nome}|${online}|${bloqueado}|${semSinal}`;
+    if (!iconCache.current[k]) iconCache.current[k] = createIcon(nome, online, bloqueado, semSinal);
+    return iconCache.current[k];
+  };
+
   return (
     <div className="card" style={{padding: '0', overflow: 'hidden'}}>
       <div style={{padding: '1rem 1.5rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
@@ -450,8 +458,8 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
       <MapContainer center={centerMoc} zoom={13} style={{ height: '400px', width: '100%' }} ref={mapRef}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {/* Rota da entrega em andamento + pontos de coleta e destino */}
-        {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup><div style={{fontWeight: 700}}>🏢 Coleta: {entregaRota.origemEndereco || entregaRota.origem || 'Ponto de coleta'}</div></Popup></Marker>}
-        {entregaRota?.destinoCoords && <Marker position={[entregaRota.destinoCoords.lat, entregaRota.destinoCoords.lng]} icon={iconeDestinoEmp}><Popup><div style={{fontWeight: 700}}>🏠 Entrega: {entregaRota.destinoEndereco || entregaRota.destino || 'Destino da entrega'}</div></Popup></Marker>}
+        {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup autoPan={false}><div style={{fontWeight: 700}}>🏢 Coleta: {entregaRota.origemEndereco || entregaRota.origem || 'Ponto de coleta'}</div></Popup></Marker>}
+        {entregaRota?.destinoCoords && <Marker position={[entregaRota.destinoCoords.lat, entregaRota.destinoCoords.lng]} icon={iconeDestinoEmp}><Popup autoPan={false}><div style={{fontWeight: 700}}>🏠 Entrega: {entregaRota.destinoEndereco || entregaRota.destino || 'Destino da entrega'}</div></Popup></Marker>}
         {rota?.coords && <Polyline positions={rota.coords} pathOptions={{ color: '#6366f1', weight: 5, opacity: 0.8 }} />}
         {Object.entries(posicoes).map(([id, pos]) => {
           if (id === currentUserId) return null;
@@ -467,8 +475,8 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
           const nome = entregaAtivaCom ? (info.nome || entregaAtivaCom.entregadorNome || 'Entregador') : 'Entregador';
           const naoInformado = <span style={{ opacity: 0.5 }}>Não informado</span>;
           return (
-            <Marker key={id} position={[pos.lat, pos.lng]} icon={createIcon(nome, pos.online, isBloqueado, semSinal)}>
-              <Popup>
+            <Marker key={id} position={[pos.lat, pos.lng]} icon={getIcon(nome, pos.online, isBloqueado, semSinal)}>
+              <Popup autoPan={false}>
                 <div style={{textAlign:'center', minWidth: '200px'}}>
                   <h4 style={{margin: '0 0 5px 0'}}>{entregaAtivaCom ? nome : '🛵 Entregador online'}</h4>
                   {entregaAtivaCom ? (
