@@ -662,18 +662,6 @@ export default function Dashboard({ user }) {
     else remove(ref(db, `entregadores/${id}/empresasBloqueadas/${user.uid}`));
   };
 
-  // Abre o comprovante (foto) anexado pelo entregador na conclusao
-  const verComprovante = async (id) => {
-    try {
-      const s = await get(ref(db, `comprovantes/${id}`));
-      const foto = s.val()?.foto;
-      if (!foto) { alert('Nenhuma foto anexada para esta entrega.'); return; }
-      const w = window.open('', '_blank');
-      if (w) w.document.write('<title>Comprovante — ConectaEntregas</title><body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="' + foto + '" style="max-width:100%;max-height:100vh"></body>');
-      else alert('Permita pop-ups para ver a foto do comprovante.');
-    } catch (e) { alert('Erro ao carregar comprovante: ' + e.message); }
-  };
-
   const listFiltered = entregas.filter(e => {
     if (statusFiltro === 'pendente') return e.status === 'pendente';
     if (statusFiltro === 'em_rota') return ['aceite', 'em_transito'].includes(e.status);
@@ -763,10 +751,7 @@ export default function Dashboard({ user }) {
                   {e.status === 'pendente' ? (
                     <button onClick={() => { remove(ref(db, `entregas/${e.id}`)); remove(ref(db, `rastreio/${e.id}`)); }} className="btn-cancel">CANCELAR</button>
                   ) : e.status === 'entregue' ? (
-                    <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
-                      <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Finalizado {e.entregueEm ? new Date(e.entregueEm).toLocaleTimeString() : ''}</span>
-                      <button onClick={() => verComprovante(e.id)} className="btn-cancel" style={{color: 'var(--success)', borderColor: 'rgba(16,185,129,0.4)'}}>📷 COMPROVANTE</button>
-                    </div>
+                    <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Finalizado {e.entregueEm ? new Date(e.entregueEm).toLocaleTimeString() : ''} · ✔ código validado</span>
                   ) : (
                     <button className="btn-cancel" style={{color: 'var(--secondary)', borderColor: 'rgba(14,165,233,0.4)'}}
                       onClick={() => {

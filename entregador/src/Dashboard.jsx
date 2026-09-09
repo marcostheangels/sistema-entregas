@@ -56,28 +56,6 @@ const elMarcador = (emoji, cor, tamanho = 38) => {
 };
 
 // Rumo (bearing em graus) indo do ponto a para o ponto b
-// Comprime a foto do comprovante (max 900px, JPEG ~55%) para caber no banco
-function comprimirImagem(arquivo) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(arquivo);
-    img.onload = () => {
-      try {
-        const max = 900;
-        const escala = Math.min(1, max / Math.max(img.width, img.height));
-        const c = document.createElement('canvas');
-        c.width = Math.round(img.width * escala);
-        c.height = Math.round(img.height * escala);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        resolve(c.toDataURL('image/jpeg', 0.55));
-      } catch (e) { URL.revokeObjectURL(url); reject(e); }
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Falha ao ler a foto')); };
-    img.src = url;
-  });
-}
-
 const calcularRumo = (a, b) => {
   const dLon = (b.lng - a.lng) * Math.PI / 180;
   const y = Math.sin(dLon) * Math.cos(b.lat * Math.PI / 180);
@@ -958,37 +936,29 @@ export default function Dashboard({ user }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ===== COMPROVANTE DE ENTREGA: codigo de verificacao + foto obrigatoria =====
-  const [modalCodigo, setModalCodigo] = useState(null); // { entrega, etapa: 'codigo' | 'foto' }
+  // ===== COMPROVANTE DE ENTREGA: codigo de verificacao (sem foto) =====
+  const [modalCodigo, setModalCodigo] = useState(null);
   const [codigoDigitado, setCodigoDigitado] = useState('');
   const [erroCodigo, setErroCodigo] = useState('');
-  const [enviandoComprovante, setEnviandoComprovante] = useState(false);
+  const [concluindo, setConcluindo] = useState(false);
   const rastreioAtivoRef = useRef(null); // entrega ativa: espelha GPS no rastreio publico
 
   const iniciarConclusao = (ent) => {
     setCodigoDigitado('');
     setErroCodigo('');
-    setModalCodigo({ entrega: ent, etapa: 'codigo' });
+    setModalCodigo(ent);
   };
 
-  const confirmarCodigo = () => {
-    if (codigoDigitado.trim() === String(modalCodigo.entrega.codigo || '')) {
-      setErroCodigo('');
-      setModalCodigo(m => ({ ...m, etapa: 'foto' }));
-    } else {
+  const confirmarCodigo = async () => {
+    if (codigoDigitado.trim() !== String(modalCodigo.codigo || '')) {
       setErroCodigo('❌ Código errado. Confira com o cliente — a entrega só conclui com o código certo.');
+      return;
     }
-  };
-
-  const enviarComprovante = async (arquivo) => {
-    if (!arquivo || enviandoComprovante) return;
-    const ent = modalCodigo.entrega;
-    setEnviandoComprovante(true);
+    if (concluindo) return;
+    setConcluindo(true);
     try {
-      const foto = await comprimirImagem(arquivo);
-      await set(ref(db, `comprovantes/${ent.id}`), { foto, codigo: ent.codigo || '', entregadorId: user.uid, at: Date.now() });
-      await update(ref(db, `entregas/${ent.id}`), { status: 'entregue', entregueEm: Date.now(), codigoValidado: true });
-      await update(ref(db, `rastreio/${ent.id}`), { status: 'entregue', entregueEm: Date.now() }).catch(() => {});
+      await update(ref(db, `entregas/${modalCodigo.id}`), { status: 'entregue', entregueEm: Date.now(), codigoValidado: true });
+      await update(ref(db, `rastreio/${modalCodigo.id}`), { status: 'entregue', entregueEm: Date.now() }).catch(() => {});
       rastreioAtivoRef.current = null;
       setEntregaEmRota(null);
       setRotaInfo(null);
@@ -997,16 +967,16 @@ export default function Dashboard({ user }) {
       lastMsgTs.current = Date.now();
       // Apaga o historico de mensagens desta entrega na hora
       try {
-        const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(ent.id)));
+        const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(modalCodigo.id)));
         const updates = {};
         snap.forEach(c => { updates[c.key] = null; });
         if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
       } catch { /* sem permissao */ }
+      setModalCodigo(null);
     } catch (e) {
       alert('Erro ao concluir: ' + e.message);
     } finally {
-      setEnviandoComprovante(false);
-      setModalCodigo(null);
+      setConcluindo(false);
     }
   };
 
@@ -1344,41 +1314,25 @@ export default function Dashboard({ user }) {
         />
       )}
 
-      {/* Modal de conclusao: codigo de verificacao + foto do comprovante */}
+      {/* Modal de conclusao: codigo de verificacao */}
       {modalCodigo && (
         <div className="modal-comprovante">
           <div className="modal-caixa">
-            {modalCodigo.etapa === 'codigo' ? (
-              <>
-                <h3>🔐 Código de entrega</h3>
-                <p>Peça ao cliente o <strong>código de 4 dígitos</strong> que a empresa mandou por WhatsApp:</p>
-                <input
-                  inputMode="numeric"
-                  maxLength={4}
-                  autoFocus
-                  value={codigoDigitado}
-                  onChange={e => setCodigoDigitado(e.target.value.replace(/\D/g, ''))}
-                  placeholder="0000"
-                />
-                {erroCodigo && <small className="modal-erro">{erroCodigo}</small>}
-                <div className="modal-botoes">
-                  <button onClick={() => setModalCodigo(null)}>CANCELAR</button>
-                  <button className="ok" onClick={confirmarCodigo} disabled={codigoDigitado.length !== 4}>VALIDAR</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h3>📷 Foto do comprovante</h3>
-                <p>Código validado! Agora <strong>fotografe o pedido entregue</strong> para finalizar.</p>
-                <label className="btn-foto">
-                  {enviandoComprovante ? 'ENVIANDO...' : '📸 TIRAR FOTO E CONCLUIR'}
-                  <input type="file" accept="image/*" capture="environment" style={{display: 'none'}} disabled={enviandoComprovante} onChange={e => enviarComprovante(e.target.files?.[0])} />
-                </label>
-                <div className="modal-botoes">
-                  <button onClick={() => setModalCodigo(null)} disabled={enviandoComprovante}>VOLTAR</button>
-                </div>
-              </>
-            )}
+            <h3>🔐 Código de entrega</h3>
+            <p>Peça ao cliente o <strong>código de 4 dígitos</strong> que a empresa mandou por WhatsApp:</p>
+            <input
+              inputMode="numeric"
+              maxLength={4}
+              autoFocus
+              value={codigoDigitado}
+              onChange={e => setCodigoDigitado(e.target.value.replace(/\D/g, ''))}
+              placeholder="0000"
+            />
+            {erroCodigo && <small className="modal-erro">{erroCodigo}</small>}
+            <div className="modal-botoes">
+              <button onClick={() => setModalCodigo(null)} disabled={concluindo}>CANCELAR</button>
+              <button className="ok" onClick={confirmarCodigo} disabled={codigoDigitado.length !== 4 || concluindo}>{concluindo ? 'CONCLUINDO...' : 'VALIDAR E CONCLUIR'}</button>
+            </div>
           </div>
         </div>
       )}
