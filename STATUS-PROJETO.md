@@ -1,4 +1,11 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 12:25
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 12:50
+
+## 📱 Atualização obrigatória do app (sem Play Store) (09/09/2026)
+- App do entregador tem constante `APP_VERSAO` (hoje `1.1.0`) em `entregador/src/App.jsx` — **aumentar a cada release**
+- Master define "Versão mínima" no painel (`config/versaoMinima.app`): app antigo mostra tela de bloqueio com botão que baixa o APK novo direto de `https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk`
+- APK público fica em `docs/apk/App-Entregador.apk` (exceção no .gitignore) — **copiar o APK novo para lá a cada release antes do push**
+- Fluxo de release do entregador: bump APP_VERSAO → build APK → copiar p/ raiz e docs/apk/ → push → (opcional) subir versão mínima no Master
+- Pedidos antigos sem código: geram código no aceite (fix 12:41)
 
 ## 🚀 Pacote iFood/99 — comprovante, taxa, pagamento e rastreio (09/09/2026)
 - **Código de verificação anti-fraude**: toda entrega nova gera um código de 4 dígitos (empresa vê no card). O entregador só conclui digitando o código certo

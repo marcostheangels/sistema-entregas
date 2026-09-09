@@ -151,6 +151,24 @@ function PainelAprovacoes({ user }) {
   const receitaTotal = concluidasTotal.reduce((s, e) => s + taxaDe(e), 0);
   const aRepassarTotal = concluidasTotal.reduce((s, e) => s + liquidoDe(e), 0);
 
+  // ===== VERSAO MINIMA OBRIGATORIA DO APP DO ENTREGADOR =====
+  const [versaoMinima, setVersaoMinima] = useState('');
+  const [versaoMsg, setVersaoMsg] = useState('');
+  useEffect(() => {
+    const u = onValue(ref(db, 'config/versaoMinima'), snap => setVersaoMinima(snap.val()?.app || ''));
+    return u;
+  }, []);
+
+  const salvarVersao = async () => {
+    const v = versaoMinima.trim();
+    if (v && !/^\d+\.\d+(\.\d+)?$/.test(v)) { setVersaoMsg('❌ Use o formato 1.1 ou 1.1.0'); return; }
+    try {
+      await set(ref(db, 'config/versaoMinima'), v ? { app: v, at: Date.now() } : null);
+      setVersaoMsg(v ? `✅ Mínima ${v} — apps antigos bloqueiam na próxima abertura.` : '✅ Bloqueio desativado.');
+      setTimeout(() => setVersaoMsg(''), 4000);
+    } catch (e) { setVersaoMsg('❌ ' + e.message); }
+  };
+
   const [backupMsg, setBackupMsg] = useState('');
 
   const fazerBackup = async () => {
@@ -391,6 +409,20 @@ function PainelAprovacoes({ user }) {
             <input type="number" step="0.5" min="0" value={configTaxa.percentual} onChange={e => setConfigTaxa(t => ({ ...t, percentual: e.target.value }))} style={{width: 64, marginLeft: 6, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
           </label>
           <button className="admin-btn backup" onClick={salvarTaxa}>SALVAR TAXA</button>
+        </div>
+      </div>
+
+      <div className="admin-backup">
+        <div className="admin-backup-info">
+          <strong>📱 Atualização obrigatória do app (entregador)</strong>
+          <span>Defina a versão mínima: quem estiver com APK antigo vê a tela de bloqueio com botão para baixar o novo (hospedado aqui no site). Deixe vazio para desativar.</span>
+          {versaoMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{versaoMsg}</span>}
+        </div>
+        <div className="admin-backup-botoes" style={{alignItems: 'center'}}>
+          <label style={{fontSize: '0.72rem', color: '#94a3b8'}}>Versão mínima
+            <input type="text" placeholder="ex.: 1.1" value={versaoMinima} onChange={e => setVersaoMinima(e.target.value)} style={{width: 90, marginLeft: 6, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+          </label>
+          <button className="admin-btn backup" onClick={salvarVersao}>SALVAR</button>
         </div>
       </div>
 

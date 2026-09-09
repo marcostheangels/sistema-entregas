@@ -6,6 +6,56 @@ import Auth from './Auth';
 import Dashboard from './Dashboard';
 import './App.css';
 
+// Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
+export const APP_VERSAO = '1.1.0';
+const URL_APK = 'https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk';
+
+// Compara "1.2.3" com "1.10.0" corretamente
+const versaoMenorQue = (a, b) => {
+  const pa = String(a || '0').split('.').map(Number);
+  const pb = String(b || '0').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) < (pb[i] || 0)) return true;
+    if ((pa[i] || 0) > (pb[i] || 0)) return false;
+  }
+  return false;
+};
+
+// Tela de bloqueio: versao antiga e obrigada a atualizar (APK direto do site, sem Play Store)
+function AtualizacaoObrigatoria({ atual, minima }) {
+  return (
+    <div className="login-container">
+      <div className="login-card" style={{textAlign: 'center'}}>
+        <div style={{fontSize: '3rem', marginBottom: 12}}>🚨</div>
+        <h1>Atualização obrigatória</h1>
+        <p>
+          Seu app está na versão <strong>{atual}</strong> e a mínima agora é a <strong>{minima}</strong>.<br />
+          Atualize para continuar trabalhando — é rápido e não perde seus dados.
+        </p>
+        <a
+          href={URL_APK}
+          style={{display: 'block', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff',
+                  borderRadius: 12, padding: '14px', fontFamily: 'Archivo, sans-serif', fontWeight: 800,
+                  fontSize: '0.9rem', letterSpacing: '0.05em', textDecoration: 'none', marginTop: 8}}
+        >
+          ⬇️ BAIXAR ATUALIZAÇÃO
+        </a>
+        <p style={{fontSize: '0.72rem', marginTop: 12, lineHeight: 1.6}}>
+          Baixou? Toque no arquivo e confirme a instalação.<br />
+          Depois toque em "já atualizei" abaixo.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          style={{background: 'transparent', color: '#94a3b8', border: '1px solid #334155',
+                  borderRadius: 10, padding: '10px 18px', fontWeight: 700, cursor: 'pointer', marginTop: 6}}
+        >
+          JÁ ATUALIZEI — VERIFICAR
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AguardandoAprovacao({ user }) {
   return (
     <div className="auth-wrapper">
@@ -141,6 +191,14 @@ function App() {
   const [temPerfil, setTemPerfil] = useState(true);
   const [perfilCarregando, setPerfilCarregando] = useState(true);
   const [dadosAprov, setDadosAprov] = useState(null);
+  const [versaoMinima, setVersaoMinima] = useState(null);
+
+  // Versao minima definida pelo Master: app antigo se auto-bloqueia
+  useEffect(() => {
+    if (!user) { setVersaoMinima(null); return; }
+    const unsub = onValue(ref(db, 'config/versaoMinima'), snap => setVersaoMinima(snap.val()?.app || null), () => {});
+    return unsub;
+  }, [user]);
 
   useEffect(() => {
     let unsubAprov = null;
@@ -171,6 +229,8 @@ function App() {
   }, [user, aprovado]);
 
   if (loading) return <div className="loading">Carregando...</div>;
+
+  if (user && versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
 
   if (user && aprovado === false) return <AguardandoAprovacao user={user} />;
 

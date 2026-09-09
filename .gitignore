@@ -7,8 +7,9 @@ node_modules/
 dist/
 www/
 
-# APKs (artefatos de build, não versionar)
+# APKs (artefatos de build, não versionar) — exceto o APK público para download no Pages
 *.apk
+!docs/apk/*.apk
 
 # Instalador Windows (acima do limite de 100MB do GitHub, não versionar)
 *.exe
