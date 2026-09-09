@@ -900,14 +900,23 @@ export default function Dashboard({ user, versao }) {
     })();
   }, [entregas, user.uid]);
 
-  // Auto-reparo do perfil: se o cadastro sumiu (reset pelo admin), recria a partir da aprovacao
+  // Auto-reparo do perfil: se o cadastro sumiu (reset pelo admin), recria a partir da aprovacao.
+  // Excecao: cadastro EXCLUIDO pelo Master (recusados) — nao recria e desloga.
   useEffect(() => {
     if (!user.uid) return;
     (async () => {
       try {
         const p = await get(ref(db, `entregadores/${user.uid}`));
         if (p.exists()) return;
+        const rec = await get(ref(db, `recusados/${user.uid}`));
+        if (rec.val()) {
+          remove(ref(db, `posicoes/${user.uid}`)).catch(() => {});
+          alert('Sua conta foi excluída pelo administrador.');
+          signOut(auth);
+          return;
+        }
         const a = await get(ref(db, `aprovacoes/${user.uid}`));
+        if (!a.exists()) return;
         const d = a.val() || {};
         await set(ref(db, `entregadores/${user.uid}`), {
           nome: d.nome || auth.currentUser?.displayName || '',

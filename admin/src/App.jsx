@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.0';
+const APP_VERSAO_ENTREGADOR = '1.4.1';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -366,12 +366,32 @@ function PainelAprovacoes({ user }) {
     }
   };
   const revogar = (id) => update(ref(db, `aprovacoes/${id}`), { aprovado: false, aprovadoEm: null });
-  // Excluir = recusa definitiva: marca em "recusados" para o app da empresa NAO recriar a solicitacao
-  const excluir = (id) => {
-    if (!window.confirm('Excluir esta solicitação? A conta ficará recusada e só poderá voltar se o Master aprovar um novo cadastro dela.')) return;
-    set(ref(db, `recusados/${id}`), { email: solicitacoes?.[id]?.email || '', nome: solicitacoes?.[id]?.nome || '', ts: Date.now() })
-      .catch(() => {})
-      .finally(() => remove(ref(db, `aprovacoes/${id}`)));
+  // Excluir = remocao TOTAL do sistema: aprovacao + perfil + GPS + presenca + chats.
+  // Marca em "recusados" para o app NAO recriar a solicitacao.
+  const excluir = async (id) => {
+    const s = solicitacoes?.[id] || {};
+    const tipo = s.tipo || 'entregador';
+    if (!window.confirm(`Excluir ${tipo === 'empresa' ? 'a empresa' : 'o entregador'} ${s.nome || s.email || ''}?\n\nSerão apagados: cadastro, perfil, localização e chats.\nLembre-se: a conta de LOGIN só é apagada no Firebase Console > Authentication.`)) return;
+    try {
+      await set(ref(db, `recusados/${id}`), { email: s.email || '', nome: s.nome || '', ts: Date.now() }).catch(() => {});
+      await remove(ref(db, `aprovacoes/${id}`));
+      // Perfil + rastreamento + presenca
+      await remove(ref(db, `${tipo === 'empresa' ? 'empresas' : 'entregadores'}/${id}`)).catch(() => {});
+      await remove(ref(db, `posicoes/${id}`)).catch(() => {});
+      await remove(ref(db, `presenca/${id}`)).catch(() => {});
+      // Chats: apaga mensagens ligadas a este uid
+      const snap = await get(ref(db, 'mensagens')).catch(() => null);
+      if (snap?.exists()) {
+        const updates = {};
+        snap.forEach(c => {
+          const m = c.val() || {};
+          if (m.entregadorId === id || m.empresaId === id) updates[c.key] = null;
+        });
+        if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
+      }
+    } catch (e) {
+      window.alert('Erro ao excluir: ' + e.message);
+    }
   };
 
   // ---- Dados completos do cadastro ----
