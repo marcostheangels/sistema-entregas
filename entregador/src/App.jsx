@@ -7,7 +7,7 @@ import Dashboard from './Dashboard';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.1';
+export const APP_VERSAO = '1.4.2';
 // APK publico para download no bloqueio de atualizacao: nome com a versao da release
 const URL_APK = `https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas-${APP_VERSAO}.apk`;
 

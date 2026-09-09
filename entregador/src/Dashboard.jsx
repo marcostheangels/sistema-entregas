@@ -1463,9 +1463,9 @@ export default function Dashboard({ user, versao }) {
                 </div>
               )}
               <div className="route-meta">
-                <div className="meta-box"><span className="meta-val">{emColeta ? (rotaInfo?.distanciaColeta ?? (kmColeta != null ? kmColeta.toFixed(1) : '--')) : '—'}</span><span className="meta-lab">KM BUSCAR</span></div>
-                <div className="meta-box"><span className="meta-val">{levarKm != null ? levarKm.toFixed(1) : '--'}</span><span className="meta-lab">KM LEVAR</span></div>
-                <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaTotal?.toFixed(1) || '--'}</span><span className="meta-lab">KM ROTA</span></div>
+                <div className="meta-box"><span className="meta-val">{emColeta ? (rotaInfo?.distanciaColeta != null ? Number(rotaInfo.distanciaColeta).toFixed(1) : (kmColeta != null ? kmColeta.toFixed(1) : '--')) : '—'}</span><span className="meta-lab">KM BUSCAR</span></div>
+                <div className="meta-box"><span className="meta-val">{levarKm != null ? Number(levarKm).toFixed(1) : '--'}</span><span className="meta-lab">KM LEVAR</span></div>
+                <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaTotal != null ? Number(rotaInfo.distanciaTotal).toFixed(1) : '--'}</span><span className="meta-lab">KM ROTA</span></div>
                 <div className="meta-box"><span className="meta-val">{rotaInfo?.tempoTotal || '--'}</span><span className="meta-lab">MIN ROTA</span></div>
               </div>
               <div className="nav-shortcuts">
