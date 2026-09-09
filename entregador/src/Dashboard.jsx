@@ -1299,7 +1299,9 @@ export default function Dashboard({ user }) {
                     const result = await runTransaction(ref(db, `entregas/${item.id}`), (atual) => {
                       if (atual === null) return atual;
                       if (atual.status !== 'pendente') return; // Aborta: outro entregador já aceitou
-                      return { ...atual, status: 'aceite', entregadorId: user.uid, entregadorNome: nomeEntregador, aceiteAt: Date.now() };
+                      // Pedidos antigos (antes do anti-fraude) ganham um codigo agora mesmo
+                      const codigo = atual.codigo || String(Math.floor(1000 + Math.random() * 9000));
+                      return { ...atual, status: 'aceite', entregadorId: user.uid, entregadorNome: nomeEntregador, aceiteAt: Date.now(), codigo };
                     });
                     if (!result.committed) {
                       alert('Esta entrega já foi aceita por outro entregador.');
