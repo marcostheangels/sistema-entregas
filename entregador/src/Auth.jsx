@@ -40,6 +40,25 @@ export default function Auth({ onAuth }) {
 
       if (isLogin) {
         const cred = await signInWithEmailAndPassword(auth, email, senha);
+        // Auto-reparo: se o perfil foi apagado (ex.: reset pelo admin), recria a partir da aprovacao
+        try {
+          const p = await get(ref(db, `entregadores/${cred.user.uid}`));
+          if (!p.exists()) {
+            const a = await get(ref(db, `aprovacoes/${cred.user.uid}`));
+            const d = a.val() || {};
+            await set(ref(db, `entregadores/${cred.user.uid}`), {
+              nome: d.nome || cred.user.displayName || email.split('@')[0],
+              email: d.email || email,
+              telefone: d.telefone || '',
+              cpf: d.cpf || '',
+              veiculo: d.veiculo || '',
+              placa: (d.placa || '').toUpperCase(),
+              endereco: d.endereco || '',
+              status: 'disponivel',
+              createdAt: Date.now()
+            });
+          }
+        } catch { /* segue mesmo se nao conseguir reparar */ }
         onAuth(cred.user);
       } else {
         if (!nome || !telefone || !cpf) {

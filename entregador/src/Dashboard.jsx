@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push, get } from 'firebase/database';
+import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push, get, set } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import * as maplibregl from 'maplibre-gl';
@@ -856,12 +856,38 @@ export default function Dashboard({ user }) {
     if (!user.uid) return;
     const semNome = entregas.filter(e => e.entregadorId === user.uid && !e.entregadorNome);
     if (!semNome.length) return;
-    get(ref(db, `entregadores/${user.uid}`)).then(s => {
-      const nome = s.val()?.nome;
+    (async () => {
+      let nome = '';
+      try { nome = (await get(ref(db, `entregadores/${user.uid}`))).val()?.nome || ''; } catch { /* segue */ }
+      if (!nome) { try { nome = (await get(ref(db, `aprovacoes/${user.uid}`))).val()?.nome || ''; } catch { /* segue */ } }
       if (!nome) return;
       semNome.forEach(e => update(ref(db, `entregas/${e.id}`), { entregadorNome: nome }).catch(() => {}));
-    }).catch(() => {});
+    })();
   }, [entregas, user.uid]);
+
+  // Auto-reparo do perfil: se o cadastro sumiu (reset pelo admin), recria a partir da aprovacao
+  useEffect(() => {
+    if (!user.uid) return;
+    (async () => {
+      try {
+        const p = await get(ref(db, `entregadores/${user.uid}`));
+        if (p.exists()) return;
+        const a = await get(ref(db, `aprovacoes/${user.uid}`));
+        const d = a.val() || {};
+        await set(ref(db, `entregadores/${user.uid}`), {
+          nome: d.nome || auth.currentUser?.displayName || '',
+          email: d.email || auth.currentUser?.email || '',
+          telefone: d.telefone || '',
+          cpf: d.cpf || '',
+          veiculo: d.veiculo || '',
+          placa: (d.placa || '').toUpperCase(),
+          endereco: d.endereco || '',
+          status: 'disponivel',
+          createdAt: Date.now()
+        });
+      } catch { /* segue mesmo se nao conseguir reparar */ }
+    })();
+  }, [user.uid]);
 
   // Keepalive Web: mantem o GPS atualizando mesmo com a aba/janela em segundo plano
   const startKeepalive = () => {
@@ -1125,9 +1151,10 @@ export default function Dashboard({ user }) {
                     audioRef.current.currentTime = 0;
                   }
                   if (item.status === 'pendente') {
-                    // Pega o nome do perfil para gravar na entrega (relatorio da empresa)
+                    // Pega o nome do perfil (ou da aprovacao) para gravar na entrega (relatorio da empresa)
                     let nomeEntregador = '';
-                    try { const ps = await get(ref(db, `entregadores/${user.uid}`)); nomeEntregador = ps.val()?.nome || ''; } catch { /* segue sem nome */ }
+                    try { nomeEntregador = (await get(ref(db, `entregadores/${user.uid}`))).val()?.nome || ''; } catch { /* segue sem nome */ }
+                    if (!nomeEntregador) { try { nomeEntregador = (await get(ref(db, `aprovacoes/${user.uid}`))).val()?.nome || ''; } catch { /* segue sem nome */ } }
                     // Transação: só um entregador consegue aceitar (evita corrida)
                     const result = await runTransaction(ref(db, `entregas/${item.id}`), (atual) => {
                       if (atual === null) return atual;
