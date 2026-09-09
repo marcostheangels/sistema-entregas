@@ -1,4 +1,10 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 10:20
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 10:30
+
+## 🎨 Logo ConectaEntregas Moc em tudo (09/09/2026)
+- Logo oficial aplicada em: ícone dos 2 APKs (launcher normal/redondo/adaptativo em todas as densidades), favicons + manifests PWA dos 3 apps web, telas de login e headers dos painéis (empresa, admin, entregador), landing page e instalador Windows
+- Fonte da verdade: `ferramentas/gerar-icones.ps1` (gera todos os tamanhos a partir da logo original)
+- APKs regenerados (`App-Empresa.apk`, `App-Entregador.apk`) e Pages atualizado — quem já tem o APK antigo precisa reinstalar para ver o ícone novo
+- Importante: imagens em JSX usam `import.meta.env.BASE_URL` para funcionar no GitHub Pages
 
 ## 💻 Instalador Windows para clientes (09/09/2026)
 - **`Instalador-ConectaEntregas-Empresas.exe`** na raiz do projeto (112 MB) — instalador NSIS one-click do painel da empresa para PC
