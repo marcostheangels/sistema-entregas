@@ -133,6 +133,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
   const [aprovado, setAprovado] = useState(false); // so entra com aprovacao explicita do admin
+  const [recusado, setRecusado] = useState(false); // cadastro excluido/recusado pelo Master
 
   useEffect(() => {
     let unsubAprov = null;
@@ -146,10 +147,14 @@ function App() {
           // Nao cria solicitacao para a conta de administrador
           get(ref(db, `admin/${u.uid}`)).then(adm => {
             if (adm.val() !== true) {
-              return get(ref(db, `empresas/${u.uid}`)).then(perf => {
-                return set(ref(db, `aprovacoes/${u.uid}`), {
-                  tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
-                  aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
+              // Cadastro recusado pelo Master: NAO recria a solicitacao
+              return get(ref(db, `recusados/${u.uid}`)).then(rec => {
+                if (rec.val()) { setRecusado(true); return null; }
+                return get(ref(db, `empresas/${u.uid}`)).then(perf => {
+                  return set(ref(db, `aprovacoes/${u.uid}`), {
+                    tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
+                    aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
+                  });
                 });
               });
             }
@@ -157,6 +162,7 @@ function App() {
           setAprovado(false);
         } else {
           setAprovado(s.val().aprovado === true);
+          setRecusado(false);
         }
         setInitializing(false);
       }, () => { setAprovado(false); setInitializing(false); });
@@ -181,6 +187,22 @@ function App() {
   }, [user, aprovado]);
 
   if (initializing) return <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>Iniciando...</div>;
+
+  if (user && recusado) return (
+    <div style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f172a', padding:20}}>
+      <div style={{maxWidth:420, textAlign:'center', background:'#1e293b', border:'1px solid #334155', borderRadius:16, padding:'32px 24px'}}>
+        <div style={{fontSize:44}}>⛔</div>
+        <h2 style={{color:'#f87171', margin:'12px 0'}}>Cadastro recusado</h2>
+        <p style={{color:'#94a3b8', fontSize:'0.9rem', lineHeight:1.5}}>
+          Este cadastro foi recusado pelo administrador. Se foi um engano, entre em contato conosco para resolver.
+        </p>
+        <button
+          onClick={() => signOut(auth)}
+          style={{marginTop:18, padding:'10px 28px', borderRadius:10, border:'none', background:'#6366f1', color:'white', fontWeight:700, cursor:'pointer'}}
+        >SAIR</button>
+      </div>
+    </div>
+  );
 
   if (user && !aprovado) return <AguardandoAprovacao user={user} onSair={() => signOut(auth)} />;
 

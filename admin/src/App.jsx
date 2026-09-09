@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.3.4';
+const APP_VERSAO_ENTREGADOR = '1.4.0';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -117,7 +117,7 @@ function MapaTempoReal({ posicoes, entregas, entregadores }) {
       const cor = corDaMoto(a.id);
       const html = `<div style="width:34px;height:34px;border-radius:50%;background:${cor};display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 8px rgba(0,0,0,0.35);border:2.5px solid white;position:relative;">🛵${a.entrega ? '<span style="position:absolute;bottom:-5px;right:-7px;font-size:14px;">📦</span>' : ''}</div>`;
       const icone = L.divIcon({ html, className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
-      const popup = `<b>${a.perfil.nome || 'Entregador'}</b><br/>📞 ${a.perfil.telefone || '—'}<br/>🛵 ${a.perfil.veiculo || '—'}${a.perfil.placa ? ' · ' + a.perfil.placa : ''}<br/><b>${a.entrega ? `📦 Pedido para ${a.entrega.empresaNome || 'Empresa'}` : '🟢 Livre — aguardando pedido'}</b>${a.entrega?.destino ? `<br/>📍 ${a.entrega.destino}` : ''}`;
+      const popup = `<b>${a.perfil.nome || 'Entregador'}</b><br/>📞 ${a.perfil.telefone || '—'}<br/>🛵 ${a.perfil.veiculo || '—'}${a.perfil.placa ? ' · ' + a.perfil.placa : ''}<br/><b>${a.entrega ? `📦 Pedido ${a.entrega.codigo ? '#' + a.entrega.codigo : ''} — ${a.entrega.empresaNome || 'Empresa'}` : '🟢 Livre — aguardando pedido'}</b>${a.entrega ? `<br/>🏢 Coleta: ${a.entrega.origem || '—'}<br/>🏠 Entrega: ${a.entrega.destino || '—'}${a.entrega.valor ? `<br/>💰 R$ ${Number(a.entrega.valor).toFixed(2)}` : ''}<br/>🚦 ${a.entrega.status === 'em_transito' ? 'Levando o pedido' : 'Buscando o pedido'}` : ''}`;
       const existente = marcadoresRef.current[a.id];
       if (existente) {
         existente.setLatLng([a.p.lat, a.p.lng]);
@@ -148,7 +148,11 @@ function MapaTempoReal({ posicoes, entregas, entregadores }) {
                 <strong>{a.perfil.nome || 'Entregador'}</strong>
                 <small>📞 {a.perfil.telefone || '—'} · 🛵 {a.perfil.veiculo || '—'}{a.perfil.placa ? ` · ${a.perfil.placa}` : ''}</small>
                 {a.entrega ? (
-                  <small className="rel-status ocupado">📦 Pedido #{a.entrega.codigo || a.entrega.id || '—'} — {a.entrega.empresaNome || 'Empresa'} → {a.entrega.destino || 'entrega'}</small>
+                  <small className="rel-status ocupado">
+                    📦 {a.entrega.codigo ? `#${a.entrega.codigo} · ` : ''}{a.entrega.empresaNome || 'Empresa'} · {a.entrega.status === 'em_transito' ? 'levando' : 'buscando'}<br/>
+                    🏢 {a.entrega.origem || '—'}<br/>
+                    🏠 {a.entrega.destino || '—'}{a.entrega.valor ? <><br/>💰 R$ {Number(a.entrega.valor).toFixed(2)}</> : null}
+                  </small>
                 ) : (
                   <small className="rel-status livre">🟢 Livre — aguardando pedido</small>
                 )}
@@ -177,16 +181,18 @@ function PainelAprovacoes({ user }) {
   }, []);
 
   // Dados ao vivo para a visao geral e o monitor de entregas
+  // (leitura DIRETA sem orderBy: as regras do Firebase negam query com orderByChild
+  //  fora de status/entregadorId/empresaId — ordenamos aqui no cliente)
   useEffect(() => {
-    const q = query(ref(db, 'entregas'), orderByChild('createdAt'));
-    const u1 = onValue(q, snap => {
+    const u1 = onValue(ref(db, 'entregas'), snap => {
       const list = [];
       snap.forEach(c => list.push({ id: c.key, ...c.val() }));
+      list.sort((a, b) => (a.createdAt || a.criadoEm || 0) - (b.createdAt || b.criadoEm || 0));
       setEntregas(list);
-    });
-    const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
-    const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
-    const u4 = onValue(ref(db, 'presenca'), snap => setPresenca(snap.val() || {}));
+    }, () => {});
+    const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}), () => {});
+    const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}), () => {});
+    const u4 = onValue(ref(db, 'presenca'), snap => setPresenca(snap.val() || {}), () => {});
     return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
@@ -326,6 +332,7 @@ function PainelAprovacoes({ user }) {
 
   const aprovar = async (id) => {
     const s = lista.find(x => x.id === id);
+    await remove(ref(db, `recusados/${id}`)).catch(() => {});
     await update(ref(db, `aprovacoes/${id}`), { aprovado: true, aprovadoEm: Date.now() });
     // Cria/atualiza o perfil do aprovado automaticamente com os dados do cadastro
     try {
@@ -359,7 +366,13 @@ function PainelAprovacoes({ user }) {
     }
   };
   const revogar = (id) => update(ref(db, `aprovacoes/${id}`), { aprovado: false, aprovadoEm: null });
-  const excluir = (id) => { if (window.confirm('Excluir esta solicitação? O cadastro ficará bloqueado até nova solicitação.')) remove(ref(db, `aprovacoes/${id}`)); };
+  // Excluir = recusa definitiva: marca em "recusados" para o app da empresa NAO recriar a solicitacao
+  const excluir = (id) => {
+    if (!window.confirm('Excluir esta solicitação? A conta ficará recusada e só poderá voltar se o Master aprovar um novo cadastro dela.')) return;
+    set(ref(db, `recusados/${id}`), { email: solicitacoes?.[id]?.email || '', nome: solicitacoes?.[id]?.nome || '', ts: Date.now() })
+      .catch(() => {})
+      .finally(() => remove(ref(db, `aprovacoes/${id}`)));
+  };
 
   // ---- Dados completos do cadastro ----
   const [detalhes, setDetalhes] = useState(null); // { tipo, nome, dados }

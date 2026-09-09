@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push, get, set } from 'firebase/database';
+import { ref, onValue, update, query, orderByChild, equalTo, runTransaction, push, get, set, remove, onDisconnect } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import * as maplibregl from 'maplibre-gl';
@@ -619,15 +619,17 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
           </div>
         </div>
       </div>
-      <div className="delivery-footer">
-        <button
-          onClick={() => onAction(entrega)}
-          className="btn-full"
-          style={{ background: actionColor || 'var(--primary)', color: 'white' }}
-        >
-          {actionLabel}
-        </button>
-      </div>
+      {actionLabel ? (
+        <div className="delivery-footer">
+          <button
+            onClick={() => onAction(entrega)}
+            className="btn-full"
+            style={{ background: actionColor || 'var(--primary)', color: 'white' }}
+          >
+            {actionLabel}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -691,6 +693,36 @@ export default function Dashboard({ user, versao }) {
   const addLog = (msg) => {
     setDebugLog(prev => [new Date().toLocaleTimeString() + ': ' + msg, ...prev.slice(0, 9)]);
   };
+
+  // ===== RESTRICAO RIGOROSA: UMA SESSAO POR ENTREGADOR =====
+  // Ao logar em um celular, qualquer sessao anterior em outro celular e expulsada na hora.
+  const minhaSessao = useRef('s' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  const kicadoRef = useRef(false);
+  useEffect(() => {
+    const montadoEm = Date.now();
+    const sessaoRef = ref(db, `entregadores/${user.uid}/sessao`);
+    const registrar = () => set(sessaoRef, { id: minhaSessao.current, ts: Date.now() }).catch(() => {});
+    registrar();
+    // Se este celular perder a conexao (app fechado/sem internet), a sessao e liberada sozinha
+    onDisconnect(sessaoRef).remove().catch(() => {});
+    const unsub = onValue(sessaoRef, (snap) => {
+      const s = snap.val();
+      if (s && s.id && s.id !== minhaSessao.current && s.ts >= montadoEm) {
+        // Outro celular acabou de logar com esta conta: sai daqui imediatamente
+        kicadoRef.current = true;
+        remove(ref(db, `posicoes/${user.uid}`)).catch(() => {});
+        update(ref(db, `entregadores/${user.uid}`), { online: false }).catch(() => {});
+        signOut(auth);
+        alert('⚠️ Sua conta foi aberta em outro celular.\n\nCada entregador pode usar o app em UM celular por vez. Este dispositivo foi desconectado.');
+      }
+    });
+    const t = setInterval(registrar, 30000);
+    return () => {
+      unsub();
+      clearInterval(t);
+      if (!kicadoRef.current) set(sessaoRef, null).catch(() => {});
+    };
+  }, [user.uid]);
 
   const checkPerms = () => {
     AppSettings.checkPermissions().then(res => setPermissoes(res)).catch(e => addLog('Perm Erro: ' + e.message));
@@ -1100,43 +1132,54 @@ export default function Dashboard({ user, versao }) {
       // Se tivermos a posição do entregador, calculamos desde onde ele está.
       // Se não, calculamos apenas entre os pontos da entrega.
       const p = posicao || { lat: oLat, lng: oLng };
-      const url = (wp) => `https://router.project-osrm.org/route/v1/driving/${wp}?overview=full&geometries=geojson`;
+
+      // OSRM com timeout de 8s: se falhar, usamos linha reta (a rota real tenta de novo no proximo movimento)
+      const osrm = async (wp) => {
+        try {
+          const ctl = new AbortController();
+          const to = setTimeout(() => ctl.abort(), 8000);
+          const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${wp}?overview=full&geometries=geojson`, { signal: ctl.signal });
+          clearTimeout(to);
+          const d = await res.json();
+          return d.routes?.[0] || null;
+        } catch { return null; }
+      };
 
       if (direto) {
-        // LEVANDO O PEDIDO: rota de estrada so ate a casa do cliente
-        const res = await fetch(url(`${p.lng},${p.lat};${dLng},${dLat}`)).then(r => r.json()).catch(() => ({}));
-        if (res.routes?.[0]) {
-          const r = res.routes[0];
-          setRotaInfo({
-            distanciaTotal: r.distance / 1000,
-            distanciaColeta: 0,
-            distanciaEntrega: r.distance / 1000,
-            tempoTotal: Math.round(r.duration / 60),
-            cor: '#10b981',
-            coords: r.geometry.coordinates
-          });
-        }
+        // LEVANDO O PEDIDO: rota de estrada so ate a casa do cliente (verde)
+        const r = await osrm(`${p.lng},${p.lat};${dLng},${dLat}`);
+        setRotaInfo({
+          distanciaTotal: r ? r.distance / 1000 : haversineKm(p, { lat: dLat, lng: dLng }),
+          distanciaColeta: 0,
+          distanciaEntrega: r ? r.distance / 1000 : haversineKm(p, { lat: dLat, lng: dLng }),
+          tempoTotal: r ? Math.round(r.duration / 60) : null,
+          cor: '#10b981',
+          coords: r
+            ? r.geometry.coordinates
+            : [[p.lng, p.lat], [dLng, dLat]],
+          fallback: !r
+        });
         return;
       }
 
-      // BUSCANDO O PEDIDO: desenha a rota so ate a coleta (amber);
-      // o trecho coleta->destino fica calculado por fora para o "KM LEVAR"
-      const [rBusca, rLeva] = await Promise.all([
-        fetch(url(`${p.lng},${p.lat};${oLng},${oLat}`)).then(r => r.json()).catch(() => ({})),
-        fetch(url(`${oLng},${oLat};${dLng},${dLat}`)).then(r => r.json()).catch(() => ({}))
+      // BUSCANDO O PEDIDO: rota azul (igual mapa da empresa) so ate a coleta
+      const [rb, rl] = await Promise.all([
+        osrm(`${p.lng},${p.lat};${oLng},${oLat}`),
+        osrm(`${oLng},${oLat};${dLng},${dLat}`)
       ]);
-      const rb = rBusca.routes?.[0];
-      const rl = rLeva?.routes?.[0];
-      if (rb) {
-        setRotaInfo({
-          distanciaTotal: rl ? (rb.distance + rl.distance) / 1000 : rb.distance / 1000,
-          distanciaColeta: rb.distance / 1000,
-          distanciaEntrega: rl ? rl.distance / 1000 : null,
-          tempoTotal: Math.round((rb.duration + (rl?.duration || 0)) / 60),
-          cor: '#f59e0b',
-          coords: rb.geometry.coordinates
-        });
-      }
+      const coletaPonto = { lat: oLat, lng: oLng };
+      setRotaInfo({
+        distanciaTotal: (rb ? rb.distance : haversineKm(p, coletaPonto) * 1000 + (rl ? rl.distance : haversineKm(coletaPonto, { lat: dLat, lng: dLng }) * 1000)) / 1000,
+        distanciaColeta: rb ? rb.distance / 1000 : haversineKm(p, coletaPonto),
+        distanciaEntrega: rl ? rl.distance / 1000 : (rl === null ? haversineKm(coletaPonto, { lat: dLat, lng: dLng }) : null),
+        tempoTotal: rb ? Math.round((rb.duration + (rl?.duration || 0)) / 60) : null,
+        cor: '#6366f1',
+        coords: rb
+          ? rb.geometry.coordinates
+          : [[p.lng, p.lat], [oLng, oLat]],
+        fallback: !rb
+      });
+      if (!rb) addLog('Rota: OSRM indisponivel, usando linha reta');
     } catch (e) {
       addLog('Erro Rota: ' + e.message);
     }
@@ -1320,7 +1363,7 @@ export default function Dashboard({ user, versao }) {
                     calcRoute(item, true);
                   }
                 }}
-                actionLabel={e.status === 'pendente' ? 'ACEITAR' : (e.status === 'aceite' ? 'VER ROTA' : 'VER MAPA')}
+                actionLabel={e.status === 'pendente' ? 'ACEITAR' : (e.status === 'aceite' ? 'VER ROTA' : (e.status === 'em_transito' ? 'VER ROTA' : null))}
                 actionColor={e.status === 'aceite' ? '#f59e0b' : (e.status === 'em_transito' ? 'var(--secondary)' : null)}
               />
             ))

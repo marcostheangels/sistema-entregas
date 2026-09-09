@@ -66,6 +66,12 @@
         "$other": { ".validate": false }
       }
     },
+    "recusados": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
+      }
+    },
     "comprovantes": {
       "$id": {
         ".read": "auth != null",
