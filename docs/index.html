@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema de Entregas</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(160deg, #0f172a, #1e293b); color: #f1f5f9; padding: 24px;
+    }
+    h1 { font-size: 1.5rem; letter-spacing: .04em; margin-bottom: 6px; }
+    p.sub { color: #94a3b8; font-size: .9rem; margin-bottom: 18px; }
+    a.app {
+      display: flex; align-items: center; gap: 14px; width: 100%; max-width: 420px;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 14px; padding: 18px 22px; text-decoration: none; color: #f1f5f9;
+      transition: background .15s, transform .15s;
+    }
+    a.app:hover { background: rgba(99,102,241,.18); transform: translateY(-2px); }
+    a.app .ico { font-size: 1.9rem; }
+    a.app strong { display: block; font-size: 1.05rem; }
+    a.app span { color: #94a3b8; font-size: .82rem; }
+    footer { margin-top: 26px; color: #64748b; font-size: .75rem; }
+  </style>
+</head>
+<body>
+  <h1>🛵 SISTEMA DE ENTREGAS</h1>
+  <p class="sub">Escolha o painel que deseja abrir</p>
+  <a class="app" href="./empresa/"><span class="ico">🏢</span><span><strong>Painel da Empresa</strong><span>Criar e acompanhar entregas, chat e mapa</span></span></a>
+  <a class="app" href="./entregador/"><span class="ico">🛵</span><span><strong>App do Entregador</strong><span>Receber ofertas, navegação e ganhos</span></span></a>
+  <a class="app" href="./admin/"><span class="ico">🛡️</span><span><strong>Painel Admin</strong><span>Aprovações, reset e visão geral</span></span></a>
+  <footer>OpenStreetMap · OSRM · Photon · Firebase</footer>
+</body>
+</html>
