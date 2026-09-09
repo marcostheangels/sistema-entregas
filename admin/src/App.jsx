@@ -3,13 +3,12 @@ import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndP
 import { ref, get, set, onValue, update, remove, query, orderByChild } from 'firebase/database';
 import { auth, db } from './firebase';
 
-// Conta fixa do administrador principal
+// Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
-const ADMIN_SENHA = '[SENHA-REMOVIDA]';
 
 function LoginScreen() {
-  const [email, setEmail] = useState(ADMIN_EMAIL);
-  const [senha, setSenha] = useState(ADMIN_SENHA);
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 

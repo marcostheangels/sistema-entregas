@@ -53,7 +53,7 @@ Firebase Realtime Database e APKs Android (Capacitor).
 
 ## 🔑 Informações importantes
 
-- **Conta do admin (fixa)**: `marcostheangels@gmail.com` / senha `[SENHA-REMOVIDA]`
+- **Conta do admin (fixa)**: `marcostheangels@gmail.com` — a senha NÃO fica em código nem em documentação (você guarda ela; para trocar use o Console do Firebase > Authentication).
 - **Regras do Firebase**: `firebase-rules.json` — validadas no emulador (70 testes OK).
   Chat só com entrega ativa + entregador online. Empresa só usa o painel quando aprovada no admin.
 - **Mapas (custo zero)**: OpenStreetMap (tiles) + OSRM (rotas reais) + Photon (autocomplete/reverse).
