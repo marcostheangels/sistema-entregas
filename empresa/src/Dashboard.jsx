@@ -342,8 +342,8 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores, posicoe
 
           {ativo && ativos.includes(ativo) && (
             <div className="chat-input-linha">
-              {erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#b45309', fontWeight:700, padding:'0 4px 4px'}}>{erro}</div>}
-              {!posicoes?.[ativo]?.online && !erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#b45309', fontWeight:700, padding:'0 4px 4px'}}>⚠️ Entregador offline — chat indisponível</div>}
+              {erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#fbbf24', fontWeight:700, padding:'0 4px 4px'}}>{erro}</div>}
+              {!posicoes?.[ativo]?.online && !erro && <div style={{width:'100%', fontSize:'0.7rem', color:'#fbbf24', fontWeight:700, padding:'0 4px 4px'}}>⚠️ Entregador offline — chat indisponível</div>}
               <input value={texto} onChange={e => { setTexto(e.target.value); setErro(''); }} onKeyDown={e => { if (e.key === 'Enter') enviar(); }}
                 placeholder="Mensagem ao entregador..." maxLength={500} />
               <button onClick={enviar}>➤</button>
@@ -487,7 +487,7 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
                   ) : (
                     <p style={{margin: '0', fontSize: '0.78rem', color: 'var(--text-muted)'}}>Dados aparecem quando ele aceitar um pedido seu.</p>
                   )}
-                  <p style={{margin: '5px 0', fontSize: '0.75rem', color: semSinal ? '#b45309' : 'var(--text-muted)', fontWeight: semSinal ? 700 : 400}}>
+                  <p style={{margin: '5px 0', fontSize: '0.75rem', color: semSinal ? '#fbbf24' : 'var(--text-muted)', fontWeight: semSinal ? 700 : 400}}>
                     Última atualização: {pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '--'}{semSinal ? ' (sem sinal novo)' : ''}
                   </p>
                   <button onClick={() => onBlockToggle(id, !isBloqueado)} style={{width: '100%', marginTop: '10px', padding: '8px', borderRadius: '5px', border: 'none', background: isBloqueado ? 'var(--success)' : '#334155', color: 'white', fontWeight: 700, cursor: 'pointer'}}>
@@ -714,7 +714,7 @@ export default function Dashboard({ user }) {
                   <div className="info-row"><span className="info-label">DESTINO</span><span>{e.destino}</span></div>
                   <div className="info-row"><span className="info-label">ITEM</span><span style={{fontWeight: 700}}>{e.descricao}</span></div>
                   {e.status !== 'pendente' && (
-                    <div className="info-row" style={{background: '#f8fafc', padding: '8px', borderRadius: '8px'}}>
+                    <div className="info-row" style={{background: 'rgba(99, 102, 241, 0.12)', padding: '8px', borderRadius: '8px'}}>
                       <span className="info-label">MOTO</span>
                       <div>
                         <div style={{fontWeight: 800, color: 'var(--primary)'}}>{e.entregadorNome}</div>

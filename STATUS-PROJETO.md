@@ -1,4 +1,10 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 10:30
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 10:50
+
+## 🎨 Painel da Empresa redesenhado (09/09/2026)
+- `empresa/src/App.css` reescrito para o **tema escuro premium** (slate #0f172a + índigo #6366f1), no mesmo padrão dos painéis admin e entregador
+- Corrigido bug de layout: `empresa/src/index.css` era resto de template que forçava `#root` a 1126px com bordas laterais e texto centralizado — agora é só um reset mínimo
+- Header com vidro fosco, cards com gradiente sutil, badges translúcidas, chat flutuante e telas de login em tema escuro; mapa e popups continuam claros para leitura das ruas
+- Nenhuma funcionalidade alterada — só CSS e 3 cores inline ajustadas
 
 ## 🎨 Logo ConectaEntregas Moc em tudo (09/09/2026)
 - Logo oficial aplicada em: ícone dos 2 APKs (launcher normal/redondo/adaptativo em todas as densidades), favicons + manifests PWA dos 3 apps web, telas de login e headers dos painéis (empresa, admin, entregador), landing page e instalador Windows
