@@ -488,12 +488,13 @@ function ChatFlutuanteEnt({ uid, entregas, online, oculto }) {
 }
 
 // -- UI SUB-COMPONENTS --
-const PermissionRow = ({ icon, name, desc, status, onAction }) => (
+const PermissionRow = ({ icon, name, desc, caminho, status, onAction }) => (
   <div className={`perm-row ${!status ? 'missing' : ''}`}>
     <div className="perm-icon-box">{icon}</div>
     <div className="perm-info">
       <span className="perm-name">{name}</span>
       <span className="perm-desc">{desc}</span>
+      {!status && caminho && <span className="perm-caminho">👉 {caminho}</span>}
     </div>
     <button
       onClick={onAction}
@@ -505,19 +506,25 @@ const PermissionRow = ({ icon, name, desc, status, onAction }) => (
   </div>
 );
 
-// Itens de saude agrupados por categoria (tela dedicada)
+// Itens de saude agrupados por categoria (tela dedicada) — com o CAMINHO exato para ativar
 const GRUPOS_SAUDE = [
   { titulo: '📍 Localização', itens: [
-    { key: 'localizacao', icon: '📍', name: 'GPS / Localização', desc: 'Necessário para as rotas', acao: 'openLocationSettings' },
-    { key: 'localizacaoSempre', icon: '🌐', name: 'Permissão Sempre', desc: 'Localização em 2º plano', acao: 'openAppSettings' },
+    { key: 'localizacao', icon: '📍', name: 'GPS / Localização', desc: 'Necessário para as rotas', acao: 'openLocationSettings',
+      caminho: 'Config. do celular → Localização → Ativar (GPS ligado)' },
+    { key: 'localizacaoSempre', icon: '🌐', name: 'Permissão Sempre', desc: 'Localização em 2º plano', acao: 'openAppSettings',
+      caminho: 'Config. → Aplicativos → ConectaEntregas → Permissões → Localização → "Permitir o tempo todo"' },
   ]},
   { titulo: '🔔 Alertas', itens: [
-    { key: 'notificacao', icon: '🔔', name: 'Notificações', desc: 'Alertas de novas entregas', acao: 'openNotificationSettings' },
+    { key: 'notificacao', icon: '🔔', name: 'Notificações', desc: 'Alertas de novas entregas', acao: 'openNotificationSettings',
+      caminho: 'Config. → Aplicativos → ConectaEntregas → Notificações → Permitir' },
   ]},
   { titulo: '⚙️ Sistema', itens: [
-    { key: 'bateria', icon: '🔋', name: 'Bateria', desc: 'Sem restrição em segundo plano', acao: 'requestIgnoreBatteryOptimization' },
-    { key: 'sobreposicao', icon: '📑', name: 'Sobreposição', desc: 'Popups sobre outros apps (essencial)', acao: 'openOverlaySettings' },
-    { key: 'acessibilidade', icon: '🛠️', name: 'Acessibilidade', desc: 'Blindagem do GPS', acao: 'openAccessibilitySettings' },
+    { key: 'bateria', icon: '🔋', name: 'Bateria', desc: 'Sem restrição em segundo plano', acao: 'requestIgnoreBatteryOptimization',
+      caminho: 'Toque em ATIVAR → escolha "Sem restrições"' },
+    { key: 'sobreposicao', icon: '📑', name: 'Sobreposição', desc: 'Popups sobre outros apps (essencial)', acao: 'openOverlaySettings',
+      caminho: 'Permitir exibir sobre outros apps → Ativar' },
+    { key: 'acessibilidade', icon: '🛠️', name: 'Acessibilidade', desc: 'Blindagem do GPS', acao: 'openAccessibilitySettings',
+      caminho: 'Config. → Acessibilidade → ConectaEntregas → Ativar' },
   ]},
 ];
 const TOTAL_SAUDE = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.length, 0);
@@ -552,7 +559,7 @@ function TelaSaude({ permissoes, checkPerms, debugLog, onLimparLog, onClose }) {
             <div className="saude-secao-titulo">{g.titulo}</div>
             <div className="perm-list">
               {g.itens.map(i => (
-                <PermissionRow key={i.key} icon={i.icon} name={i.name} desc={i.desc}
+                <PermissionRow key={i.key} icon={i.icon} name={i.name} desc={i.desc} caminho={i.caminho}
                   status={permissoes[i.key]} onAction={() => AppSettings[i.acao]()} />
               ))}
             </div>
@@ -1083,11 +1090,11 @@ export default function Dashboard({ user, versao }) {
   }, []);
 
   const toggleTracking = (status) => {
-    // Bloqueio: sem permissao de localizacao nao fica online — pede a permissao primeiro
-    if (status && !permOkRef.current) {
+    // Bloqueio RIGOROSO: TODAS as permissoes da Saude do Sistema precisam estar ativas
+    if (status && !tudoOkSaude) {
       permOnlineRef.current = true;
-      addLog('Localização não permitida — pedindo permissão...');
-      pedirPermissao();
+      addLog('Permissoes incompletas (' + okSaude + '/' + TOTAL_SAUDE + ') — abrindo Saude do Sistema');
+      setSaudeAberta(true);
       return;
     }
     // Bloqueio: com entrega em andamento nao pode ficar offline — so depois de entregar
@@ -1098,7 +1105,6 @@ export default function Dashboard({ user, versao }) {
     }
     setIsOnline(status);
     onlineRef.current = status;
-
     // Tenta "desbloquear" o áudio no primeiro clique do usuário
     if (audioRef.current) {
       audioRef.current.play().then(() => {
@@ -1147,6 +1153,16 @@ export default function Dashboard({ user, versao }) {
       update(ref(db, `posicoes/${user.uid}`), { online: false });
     }
   };
+
+  // Se ele clicou ONLINE e as permissoes estavam pendentes, conecta sozinho quando completar
+  useEffect(() => {
+    if (tudoOkSaude && permOnlineRef.current) {
+      permOnlineRef.current = false;
+      addLog('Permissoes completas — conectando automaticamente');
+      toggleTracking(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tudoOkSaude]);
 
   const calcRoute = async (entrega, direto = false) => {
     if (!entrega.origemCoords || !entrega.destinoCoords) return;
@@ -1280,8 +1296,8 @@ export default function Dashboard({ user, versao }) {
             onClick={() => toggleTracking(!isOnline)}
             className="status-indicator"
             style={{
-               border: '2px solid ' + (isOnline ? '#10b981' : (permissoesOk ? '#f87171' : '#f59e0b')),
-               background: isOnline ? '#10b981' : (permissoesOk ? 'rgba(239, 68, 68, 0.85)' : 'rgba(245, 158, 11, 0.9)'),
+               border: '2px solid ' + (isOnline ? '#10b981' : (tudoOkSaude ? '#f87171' : '#f59e0b')),
+               background: isOnline ? '#10b981' : (tudoOkSaude ? 'rgba(239, 68, 68, 0.85)' : 'rgba(245, 158, 11, 0.9)'),
                color: isOnline ? '#04250f' : '#fff',
                fontWeight: 900,
                fontSize: '0.8rem',
@@ -1291,7 +1307,7 @@ export default function Dashboard({ user, versao }) {
             }}
           >
             <div className={`dot ${isOnline ? 'dot-online' : 'dot-offline'}`}></div>
-            {isOnline ? 'ONLINE' : (permissoesOk ? 'OFFLINE' : 'SEM PERMISSÃO')}
+            {isOnline ? 'ONLINE' : (tudoOkSaude ? 'OFFLINE' : `FALTAM ${TOTAL_SAUDE - okSaude}`)}
           </button>
           <button
             className="btn-icon-danger"
@@ -1309,10 +1325,10 @@ export default function Dashboard({ user, versao }) {
       </nav>
 
       <main className="main-scroll">
-        {!isOnline && !permissoesOk && (
+        {!isOnline && !tudoOkSaude && (
           <div className="aviso-permissao">
-            <span>📍 <strong>Ative a localização</strong> para poder ficar online e receber entregas.</span>
-            <button onClick={pedirPermissao}>PERMITIR AGORA</button>
+            <span>⚠️ <strong>Faltam {TOTAL_SAUDE - okSaude} permissõe(s) ({okSaude}/{TOTAL_SAUDE})</strong> — ative TODAS para ficar online e receber entregas.</span>
+            <button onClick={() => setSaudeAberta(true)}>ATIVAR AGORA</button>
             {msgPermissao && <small>{msgPermissao}</small>}
           </div>
         )}

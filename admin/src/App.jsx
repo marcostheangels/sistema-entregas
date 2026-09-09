@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.5';
+const APP_VERSAO_ENTREGADOR = '1.4.6';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');

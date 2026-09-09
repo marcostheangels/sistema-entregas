@@ -481,6 +481,14 @@
   color: var(--text-muted);
 }
 
+.perm-caminho {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.66rem;
+  color: #fbbf24;
+  line-height: 1.45;
+}
+
 .btn-fix {
   padding: 6px 12px;
   border-radius: 8px;
