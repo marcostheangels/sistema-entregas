@@ -1254,6 +1254,36 @@ export default function Dashboard({ user, versao }) {
 
   // Entrega em navegacao SEMPRE com o status mais recente (vem da lista ao vivo)
   const entregaAtual = entregaEmRota ? (entregas.find(e => e.id === entregaEmRota.id) || entregaEmRota) : null;
+
+  // Anti-fantasma: se a entrega em rota SUMIR do banco (cancelada pela empresa, reset, etc.),
+  // fecha a navegacao — o app e o painel Master ficam sempre de acordo.
+  const entregasRef = useRef([]);
+  useEffect(() => { entregasRef.current = entregas; }, [entregas]);
+  const fantasmaDesdeRef = useRef(0);
+  useEffect(() => {
+    if (!entregaEmRota) { fantasmaDesdeRef.current = 0; return; }
+    fantasmaDesdeRef.current = Date.now(); // reinicia a contagem a cada entrega aberta
+    const t = setInterval(() => {
+      const achou = entregasRef.current.find(e => e.id === entregaEmRota.id);
+      if (achou) {
+        fantasmaDesdeRef.current = 0; // existe no banco: tudo normal
+        if (achou.status === 'entregue' || achou.status === 'cancelado') {
+          setEntregaEmRota(null);
+          setRotaInfo(null);
+        }
+        return;
+      }
+      // Sumiu do banco: da 12s de graca (sincronizacao dos listeners) e fecha se continuar sumida
+      if (!fantasmaDesdeRef.current) fantasmaDesdeRef.current = Date.now();
+      if (Date.now() - fantasmaDesdeRef.current > 12000) {
+        fantasmaDesdeRef.current = 0;
+        setEntregaEmRota(null);
+        setRotaInfo(null);
+        alert('⚠️ Esta entrega não existe mais — foi cancelada pela empresa ou removida pelo administrador.');
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [entregaEmRota]);
   // Distancias ao vivo, estilo Uber: busca o pedido e depois leva o pedido
   const kmColeta = posicao && entregaAtual?.origemCoords ? haversineKm(posicao, entregaAtual.origemCoords) : null;
   const kmDestino = posicao && entregaAtual?.destinoCoords ? haversineKm(posicao, entregaAtual.destinoCoords) : null;
@@ -1397,14 +1427,18 @@ export default function Dashboard({ user, versao }) {
                     if (!nomeEntregador) { try { nomeEntregador = (await get(ref(db, `aprovacoes/${user.uid}`))).val()?.nome || ''; } catch { /* segue sem nome */ } }
                     // Transação: só um entregador consegue aceitar (evita corrida)
                     const result = await runTransaction(ref(db, `entregas/${item.id}`), (atual) => {
-                      if (atual === null) return atual;
+                      if (atual === null) return; // Entrega foi removida (cancelada pela empresa): ABORTA — nunca comita a exclusao
                       if (atual.status !== 'pendente') return; // Aborta: outro entregador já aceitou
                       // Pedidos antigos (antes do anti-fraude) ganham um codigo agora mesmo
                       const codigo = atual.codigo || String(Math.floor(1000 + Math.random() * 9000));
                       return { ...atual, status: 'aceite', entregadorId: user.uid, entregadorNome: nomeEntregador, aceiteAt: Date.now(), codigo };
                     });
                     if (!result.committed) {
-                      alert('Esta entrega já foi aceita por outro entregador.');
+                      // Diferencia: outro entregador aceitou OU a empresa cancelou/removou a entrega
+                      try {
+                        const s = await get(ref(db, `entregas/${item.id}`));
+                        alert(s.exists() ? 'Esta entrega já foi aceita por outro entregador.' : '⚠️ Esta entrega foi cancelada pela empresa.');
+                      } catch { alert('Esta entrega não está mais disponível.'); }
                     } else {
                       // Espelho publico de rastreio: cliente passa a ver o status
                       rastreioAtivoRef.current = item.id;

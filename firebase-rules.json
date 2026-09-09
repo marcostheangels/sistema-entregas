@@ -33,7 +33,7 @@
       ".indexOn": ["empresaId", "status", "entregadorId"],
       "$id": {
         ".read": "auth != null && (data.child('empresaId').val() === auth.uid || data.child('entregadorId').val() === auth.uid || data.child('status').val() === 'pendente' || root.child('admin').child(auth.uid).val() === true)",
-        ".write": "auth != null && ((!data.exists() && newData.child('empresaId').val() === auth.uid && root.child('empresas').child(auth.uid).exists() && root.child('aprovacoes').child(auth.uid).child('aprovado').val() === true) || (data.exists() && data.child('empresaId').val() === auth.uid) || (data.exists() && data.child('entregadorId').val() === auth.uid) || (data.exists() && data.child('status').val() === 'pendente' && newData.child('entregadorId').val() === auth.uid))"
+        ".write": "auth != null && ((!data.exists() && newData.child('empresaId').val() === auth.uid && root.child('empresas').child(auth.uid).exists() && root.child('aprovacoes').child(auth.uid).child('aprovado').val() === true) || (data.exists() && !newData.exists() && data.child('empresaId').val() === auth.uid && data.child('status').val() === 'pendente') || (data.exists() && data.child('entregadorId').val() === auth.uid) || (data.exists() && data.child('status').val() === 'pendente' && newData.child('entregadorId').val() === auth.uid))"
       }
     },
     "posicoes": {
