@@ -12,6 +12,7 @@ const firebaseConfig = {
   appId: "1:365779423688:web:a518b7fee5b849be3bb0fd"
 };
 
-export const app = initializeApp(firebaseConfig);
+// Nome unico por app: separa a sessao de login de cada painel no mesmo navegador
+export const app = initializeApp(firebaseConfig, 'conecta-entregador');
 export const db = getDatabase(app);
 export const auth = getAuth(app);
