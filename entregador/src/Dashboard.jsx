@@ -1045,7 +1045,7 @@ export default function Dashboard({ user }) {
     <div className="app-container">
       <nav className="dashboard-nav">
         <div className="nav-brand">
-          <h1>ENTREGADOR<span>PRO</span></h1>
+          <h1>CONECTA<span>ENTREGAS</span></h1>
         </div>
         <div className="nav-actions">
           <button

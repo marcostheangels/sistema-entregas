@@ -1,6 +1,6 @@
 {
-  "name": "Sistema de Entregas - Empresa",
-  "short_name": "Empresa",
+  "name": "ConectaEntregas Empresas",
+  "short_name": "Empresas",
   "description": "Sistema de gestão de entregas para empresas",
   "start_url": "/",
   "display": "standalone",

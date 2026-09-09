@@ -659,7 +659,7 @@ export default function Dashboard({ user }) {
       <header>
         <div className="brand">
           <div style={{background:'var(--primary)', color:'white', width:'40px', height:'40px', borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.2rem'}}>🏢</div>
-          <h1>PAINEL ADMINISTRATIVO</h1>
+          <h1>CONECTAENTREGAS EMPRESAS</h1>
         </div>
         <div className="user-info">
           <div style={{textAlign: 'right'}}>

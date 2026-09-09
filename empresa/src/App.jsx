@@ -83,7 +83,7 @@ function Login({ onAuth }) {
     <div className="login-container">
       <div className="login-card">
         <div style={{fontSize:'3rem', marginBottom:'1rem'}}>🏢</div>
-        <h1>Painel de Logística</h1>
+        <h1>ConectaEntregas Empresas</h1>
         <p>{isCadastro ? 'Cadastre sua empresa (sujeito à aprovação)' : 'Acesse o gerenciamento de entregas'}</p>
         <form onSubmit={handleSubmit}>
           {isCadastro && (

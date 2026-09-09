@@ -56,8 +56,8 @@ function LoginScreen() {
     <div className="admin-login-wrap">
       <div className="admin-login-card">
         <div className="admin-logo">🛡️</div>
-        <h1>Administração</h1>
-        <p>Acesso exclusivo do administrador</p>
+        <h1>ConectaEntregas Master</h1>
+        <p>Painel Super Admin — acesso exclusivo</p>
         <form onSubmit={handleSubmit}>
           <input type="email" placeholder="E-mail do administrador" value={email} onChange={e => setEmail(e.target.value)} required />
           <input type="password" placeholder="Senha" value={senha} onChange={e => setSenha(e.target.value)} required />
@@ -222,7 +222,7 @@ function PainelAprovacoes({ user }) {
         <div className="admin-brand">
           <span className="admin-brand-icon">🛡️</span>
           <div>
-            <h1>Central de Aprovações</h1>
+            <h1>ConectaEntregas Master</h1>
             <p>{user.email}</p>
           </div>
         </div>

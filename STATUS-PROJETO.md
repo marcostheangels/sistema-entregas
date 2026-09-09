@@ -1,4 +1,10 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 12:50
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 14:20
+
+## 🏷️ Rebranding (09/09/2026) — marca: ConectaEntregas
+- **ConectaEntregas Master** = Painel Super Admin (admin)
+- **ConectaEntregas Empresas** = Painel da Empresa (B2B)
+- **ConectaEntregas Entregador** = Aplicativo Mobile (Play Store)
+- Renomeado em: títulos das páginas, headers das telas de login e dos painéis, manifests PWA, `app_name` dos APKs Android e landing page. APKs regenerados com os nomes novos.
 
 ## 🔒 Auditoria de segurança (09/09/2026)
 Rodada completa de testes encontrou e corrigiu falhas nas regras do Firebase:
