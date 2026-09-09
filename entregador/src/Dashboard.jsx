@@ -598,7 +598,7 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
               📞 {entrega.empresaTelefone}
             </span>
           )}
-          <span className="address-value">{entrega.origem}</span>
+          <span className="address-value">{entrega.origemEndereco || entrega.origem}</span>
           {(entrega.empresaCnpj || entrega.empresaCpf) && (
             <span className="address-value" style={{fontSize: '0.75rem', opacity: 0.6, marginTop: '4px'}}>
               ID: {entrega.empresaCnpj || entrega.empresaCpf}
@@ -612,7 +612,7 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
           </div>
           <div className="address-info" style={{paddingBottom: 0}}>
             <span className="address-label">Entrega (Destino)</span>
-            <span className="address-value">{entrega.destino}</span>
+            <span className="address-value">{entrega.destinoEndereco || entrega.destino}</span>
           </div>
         </div>
       </div>

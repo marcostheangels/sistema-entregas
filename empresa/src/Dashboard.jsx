@@ -450,8 +450,8 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
       <MapContainer center={centerMoc} zoom={13} style={{ height: '400px', width: '100%' }} ref={mapRef}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {/* Rota da entrega em andamento + pontos de coleta e destino */}
-        {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup><div style={{fontWeight: 700}}>🏢 Coleta: {entregaRota.origem || 'Ponto de coleta'}</div></Popup></Marker>}
-        {entregaRota?.destinoCoords && <Marker position={[entregaRota.destinoCoords.lat, entregaRota.destinoCoords.lng]} icon={iconeDestinoEmp}><Popup><div style={{fontWeight: 700}}>🏠 Entrega: {entregaRota.destino || 'Destino da entrega'}</div></Popup></Marker>}
+        {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup><div style={{fontWeight: 700}}>🏢 Coleta: {entregaRota.origemEndereco || entregaRota.origem || 'Ponto de coleta'}</div></Popup></Marker>}
+        {entregaRota?.destinoCoords && <Marker position={[entregaRota.destinoCoords.lat, entregaRota.destinoCoords.lng]} icon={iconeDestinoEmp}><Popup><div style={{fontWeight: 700}}>🏠 Entrega: {entregaRota.destinoEndereco || entregaRota.destino || 'Destino da entrega'}</div></Popup></Marker>}
         {rota?.coords && <Polyline positions={rota.coords} pathOptions={{ color: '#6366f1', weight: 5, opacity: 0.8 }} />}
         {Object.entries(posicoes).map(([id, pos]) => {
           if (id === currentUserId) return null;
@@ -583,6 +583,26 @@ export default function Dashboard({ user }) {
       if (!p?.nome) {
         try { const s = await get(ref(db, `empresas/${user.uid}`)); p = s.val(); if (p) setPerfil(p); } catch { /* usa fallback */ }
       }
+      // Endereco estruturado (rua, numero, bairro) via reverse geocoding do Photon
+      const detalhar = async (c, fallback) => {
+        try {
+          const res = await fetch(`https://photon.komoot.io/reverse?lat=${c.lat}&lon=${c.lng}`);
+          const d = await res.json();
+          const pr = d.features?.[0]?.properties || {};
+          const rua = pr.street || pr.name || '';
+          let numero = pr.housenumber || '';
+          const bairro = pr.district || '';
+          // Se o reverse nao trouxe numero, usa o numero que a empresa digitou
+          if (!numero) numero = String(fallback || '').match(/\d+/)?.[0] || '';
+          const linha = [rua, numero].filter(Boolean).join(', ');
+          const txt = bairro && linha ? `${linha} - ${bairro}` : (linha || bairro);
+          return txt || fallback;
+        } catch { return fallback; }
+      };
+      const [origemEndereco, destinoEndereco] = await Promise.all([
+        detalhar(coords.origem, form.origem),
+        detalhar(coords.destino, form.destino)
+      ]);
       // Distancia em linha reta entre coleta e destino (km)
       const dLat = (coords.destino.lat - coords.origem.lat) * Math.PI / 180;
       const dLng = (coords.destino.lng - coords.origem.lng) * Math.PI / 180;
@@ -593,6 +613,7 @@ export default function Dashboard({ user }) {
       const novaRef = push(ref(db, 'entregas'));
       await set(novaRef, {
         ...form, empresaId: user.uid, status: 'pendente',
+        origemEndereco, destinoEndereco,
         empresaNome: p?.nome || user.email,
         empresaTelefone: p?.telefone || '',
         createdAt: Date.now(), origemCoords: coords.origem, destinoCoords: coords.destino,
