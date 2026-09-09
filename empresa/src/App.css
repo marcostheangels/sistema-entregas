@@ -738,3 +738,29 @@ header {
 .login-card p { color: var(--text-muted); font-size: 0.88rem; margin: 0 0 1.5rem; }
 
 .login-card form { display: flex; flex-direction: column; gap: 0.8rem; }
+
+.login-card input {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 13px 14px;
+  color: #f8fafc;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.login-card input::placeholder { color: #64748b; }
+
+.login-card input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.login-card input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+  -webkit-text-fill-color: #f8fafc;
+  caret-color: #f8fafc;
+}
