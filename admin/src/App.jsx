@@ -122,6 +122,57 @@ function PainelAprovacoes({ user }) {
     empresas: lista.filter(s => s.tipo === 'empresa').length
   };
 
+  // ===== BACKUP / RESTAURACAO / LIMPEZA TOTAL (somente admin) =====
+  const [backupMsg, setBackupMsg] = useState('');
+
+  const fazerBackup = async () => {
+    try {
+      const snap = await get(ref(db, '/'));
+      const dados = snap.val() || {};
+      const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      a.href = url;
+      a.download = `backup-conectaentregas-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupMsg('✅ Backup baixado. Guarde o arquivo em lugar seguro!');
+    } catch (e) {
+      setBackupMsg('❌ Erro no backup: ' + e.message);
+    }
+  };
+
+  const restaurarBackup = (arquivo) => {
+    if (!arquivo) return;
+    const leitor = new FileReader();
+    leitor.onload = async () => {
+      try {
+        const dados = JSON.parse(leitor.result);
+        if (!dados || typeof dados !== 'object' || !dados.admin) throw new Error('Arquivo inválido (não parece um backup deste sistema).');
+        if (!window.confirm('RESTAURAR ESTE BACKUP?\n\nTUDO que está no banco agora será SUBSTITUÍDO pelo conteúdo do arquivo.\n\nNão dá para desfazer!')) return;
+        await set(ref(db, '/'), dados);
+        setBackupMsg('✅ Backup restaurado com sucesso!');
+      } catch (e) {
+        setBackupMsg('❌ Erro ao restaurar: ' + e.message);
+      }
+    };
+    leitor.readAsText(arquivo);
+  };
+
+  const apagarTudo = async () => {
+    if (!window.confirm('APAGAR TUDO?\n\nSerão removidos TODOS os entregadores, empresas, entregas, chats, posições e aprovações.\n\nApenas o seu acesso de administrador é mantido.\n\nDica: faça um BACKUP antes!')) return;
+    if (!window.confirm('TEM CERTEZA ABSOLUTA?\n\nEsta ação é FINAL e apaga todos os dados agora.')) return;
+    try {
+      const snap = await get(ref(db, 'admin'));
+      await set(ref(db, '/'), { admin: snap.val() || {} });
+      setBackupMsg('🧹 Banco limpo! Tudo em branco — só o acesso admin foi mantido.');
+    } catch (e) {
+      setBackupMsg('❌ Erro ao apagar: ' + e.message);
+    }
+  };
+
   const aprovar = async (id) => {
     const s = lista.find(x => x.id === id);
     await update(ref(db, `aprovacoes/${id}`), { aprovado: true, aprovadoEm: Date.now() });
@@ -277,6 +328,21 @@ function PainelAprovacoes({ user }) {
           onChange={e => setBusca(e.target.value)}
         />
         {busca && <button onClick={() => setBusca('')}>✕</button>}
+      </div>
+
+      <div className="admin-backup">
+        <div className="admin-backup-info">
+          <strong>💾 Backup &amp; Limpeza</strong>
+          <span>Baixe uma cópia completa do banco, restaure um arquivo de backup ou apague tudo para começar do zero.</span>
+        </div>
+        <div className="admin-backup-botoes">
+          <button className="admin-btn backup" onClick={fazerBackup}>💾 BACKUP</button>
+          <label className="admin-btn restaurar">♻️ RESTAURAR
+            <input type="file" accept="application/json,.json" style={{display: 'none'}} onChange={e => { restaurarBackup(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+          <button className="admin-btn revogar" onClick={apagarTudo}>🧹 APAGAR TUDO</button>
+        </div>
+        {backupMsg && <div className="admin-backup-msg">{backupMsg}</div>}
       </div>
 
       <div className="admin-lista">

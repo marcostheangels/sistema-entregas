@@ -124,6 +124,29 @@ body {
   outline: none;
 }
 .admin-busca input:focus { border-color: #6366f1; }
+
+/* Backup & Limpeza */
+.admin-backup {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.admin-backup-info { flex: 1; min-width: 220px; }
+.admin-backup-info strong { display: block; font-size: 0.9rem; color: #f8fafc; margin-bottom: 3px; }
+.admin-backup-info span { font-size: 0.75rem; color: #94a3b8; }
+.admin-backup-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.admin-backup-botoes .admin-btn { padding: 9px 14px; border-radius: 9px; font-weight: 700; font-size: 0.75rem; cursor: pointer; border: none; letter-spacing: 0.05em; }
+.admin-btn.backup { background: #0ea5e9; color: #fff; }
+.admin-btn.backup:hover { filter: brightness(1.15); }
+.admin-btn.restaurar { background: #475569; color: #fff; display: inline-flex; align-items: center; }
+.admin-btn.restaurar:hover { filter: brightness(1.15); }
+.admin-backup-msg { width: 100%; font-size: 0.78rem; font-weight: 700; color: #fbbf24; }
 .admin-busca button {
   background: #1e293b;
   border: none;

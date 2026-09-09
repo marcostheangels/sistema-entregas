@@ -1,5 +1,7 @@
 {
   "rules": {
+    ".read": "root.child('admin').child(auth.uid).val() === true",
+    ".write": "root.child('admin').child(auth.uid).val() === true",
     "empresas": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
