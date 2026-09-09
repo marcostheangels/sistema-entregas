@@ -59,7 +59,12 @@ function Login({ onAuth }) {
           if (errCadastro.code === 'auth/email-already-in-use') {
             // E-mail ja existe no Firebase Auth (ex.: cadastro anterior apagado no reset):
             // entra com a senha informada e reaproveita a conta
-            cred = await signInWithEmailAndPassword(auth, email, senha);
+            try {
+              cred = await signInWithEmailAndPassword(auth, email, senha);
+            } catch (errLogin) {
+              // Senha nao bate com a conta ja existente: aviso claro em vez de "senha incorreta"
+              throw { code: 'auth/email-ja-cadastrado-outra-senha' };
+            }
           } else {
             throw errCadastro;
           }
@@ -86,7 +91,8 @@ function Login({ onAuth }) {
         'auth/invalid-email': 'E-mail inválido.',
         'auth/weak-password': 'A senha deve ter pelo menos 6 caracteres.',
         'auth/user-not-found': 'E-mail ou senha incorretos.',
-        'auth/invalid-credential': 'E-mail ou senha incorretos.'
+        'auth/invalid-credential': 'E-mail ou senha incorretos.',
+        'auth/email-ja-cadastrado-outra-senha': '⚠️ Este e-mail JÁ está cadastrado com uma senha diferente. Faça LOGIN com a senha antiga ou clique em "Esqueci minha senha" para redefinir e depois complete o cadastro.'
       };
       setErro(map[err.code] || 'Erro ao entrar: ' + err.message);
     } finally {
