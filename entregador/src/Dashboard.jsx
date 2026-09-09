@@ -936,8 +936,63 @@ export default function Dashboard({ user }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ===== PERMISSOES: obrigatorio permitir a localizacao antes de ficar online =====
+  const [permissoesOk, setPermissoesOk] = useState(false);
+  const [msgPermissao, setMsgPermissao] = useState('');
+  const permOkRef = useRef(false);
+  const permOnlineRef = useRef(false); // lembra que ele clicou ONLINE e falta permissao
+
+  const pedirPermissao = () => {
+    setMsgPermissao('Pedindo permissão de localização...');
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        permOkRef.current = true;
+        setPermissoesOk(true);
+        setMsgPermissao('');
+        addLog('Permissão de localização OK');
+        // Se ele ja tinha clicado em ficar online, conecta agora
+        if (permOnlineRef.current) {
+          permOnlineRef.current = false;
+          toggleTracking(true);
+        }
+      },
+      (err) => {
+        setMsgPermissao(
+          err.code === 1
+            ? '❌ Permissão negada. Segure o ícone do app > Informações do app > Permissões > Localização > Permitir o tempo todo.'
+            : '❌ ' + err.message + ' — verifique se o GPS do celular está ligado.'
+        );
+        addLog('Permissão negada: ' + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 20000 }
+    );
+  };
+
+  // Checa se a permissao ja foi concedida em algum momento anterior
+  useEffect(() => {
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then(p => {
+        if (p.state === 'granted') {
+          permOkRef.current = true;
+          setPermissoesOk(true);
+        }
+        p.onchange = () => {
+          permOkRef.current = p.state === 'granted';
+          setPermissoesOk(p.state === 'granted');
+        };
+      }).catch(() => { /* segue pelo fluxo do clique */ });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleTracking = (status) => {
-    // Sênior: Liberado para ficar online sem travas administrativas globais
+    // Bloqueio: sem permissao de localizacao nao fica online — pede a permissao primeiro
+    if (status && !permOkRef.current) {
+      permOnlineRef.current = true;
+      addLog('Localização não permitida — pedindo permissão...');
+      pedirPermissao();
+      return;
+    }
     setIsOnline(status);
     onlineRef.current = status;
 
@@ -1080,18 +1135,25 @@ export default function Dashboard({ user }) {
             className="status-indicator"
             style={{
                border: 'none',
-               background: isOnline ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+               background: isOnline ? 'rgba(16, 185, 129, 0.2)' : (permissoesOk ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.25)'),
                cursor: 'pointer'
             }}
           >
             <div className={`dot ${isOnline ? 'dot-online' : 'dot-offline'}`}></div>
-            {isOnline ? 'ONLINE' : 'OFFLINE'}
+            {isOnline ? 'ONLINE' : (permissoesOk ? 'OFFLINE' : 'SEM PERMISSÃO')}
           </button>
           <button className="btn-icon-danger" onClick={() => { if (onlineRef.current) toggleTracking(false); signOut(auth); }}><IconLogout /></button>
         </div>
       </nav>
 
       <main className="main-scroll">
+        {!isOnline && !permissoesOk && (
+          <div className="aviso-permissao">
+            <span>📍 <strong>Ative a localização</strong> para poder ficar online e receber entregas.</span>
+            <button onClick={pedirPermissao}>PERMITIR AGORA</button>
+            {msgPermissao && <small>{msgPermissao}</small>}
+          </div>
+        )}
         <div className="stats-row">
           <div className="stat-card">
             <span className="stat-label">Hoje</span>

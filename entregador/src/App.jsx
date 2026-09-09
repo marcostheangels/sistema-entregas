@@ -17,7 +17,7 @@ function AguardandoAprovacao({ user }) {
             Sua conta <strong>{user.email}</strong> está aguardando a aprovação do administrador.
           </p>
           <p style={{color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 12}}>
-            Tente entrar novamente mais tarde.
+            ⏳ Assim que o administrador aprovar, o app abre aqui mesmo automaticamente — sem precisar sair ou logar de novo.
           </p>
         </div>
         <button
@@ -143,18 +143,21 @@ function App() {
   const [dadosAprov, setDadosAprov] = useState(null);
 
   useEffect(() => {
+    let unsubAprov = null;
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setPerfilCarregando(true);
+      if (unsubAprov) { unsubAprov(); unsubAprov = null; }
       if (!u) { setAprovado(null); setLoading(false); return; }
-      // Verifica aprovação do administrador (cadastros antigos sem registro passam direto)
-      get(ref(db, `aprovacoes/${u.uid}`)).then(s => {
+      setLoading(true);
+      // Escuta a aprovacao EM TEMPO REAL: quando o admin aprovar, o app libera sozinho aqui mesmo
+      unsubAprov = onValue(ref(db, `aprovacoes/${u.uid}`), s => {
         if (s.exists()) { setAprovado(s.val().aprovado === true); setDadosAprov(s.val()); }
         else setAprovado(null);
         setLoading(false);
-      }).catch(() => { setAprovado(null); setLoading(false); });
+      }, () => { setAprovado(null); setLoading(false); });
     });
-    return unsub;
+    return () => { unsub(); if (unsubAprov) unsubAprov(); };
   }, []);
 
   // Perfil do entregador (recria a tela de cadastro caso tenha sido apagado por um reset)
