@@ -8,8 +8,9 @@ import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
 export const APP_VERSAO = '1.4.2';
-// APK publico para download no bloqueio de atualizacao: nome com a versao da release
-const URL_APK = `https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas-${APP_VERSAO}.apk`;
+// APK publico para download no bloqueio de atualizacao: LINK FIXO, sempre aponta
+// para a versao mais recente publicada (nome com versao fica no atributo download)
+const URL_APK = 'https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas.apk';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -35,6 +36,7 @@ function AtualizacaoObrigatoria({ atual, minima }) {
         </p>
         <a
           href={URL_APK}
+          download={`ConectaEntregas-${minima || atual}.apk`}
           style={{display: 'block', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff',
                   borderRadius: 12, padding: '14px', fontFamily: 'Archivo, sans-serif', fontWeight: 800,
                   fontSize: '0.9rem', letterSpacing: '0.05em', textDecoration: 'none', marginTop: 8}}
