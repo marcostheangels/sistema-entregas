@@ -1,4 +1,10 @@
-# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 10:50
+# 📌 STATUS DO PROJETO — Salvo em 09/09/2026 às 11:10
+
+## 🐛 CRÍTICO corrigido: APKs abriam em tela branca (09/09/2026)
+- **Causa**: o `vite.config.js` usava base absoluta `/sistema-entregas/<app>/` (do GitHub Pages) — dentro do WebView Android esse caminho não existe e o JS não carregava
+- **Correção**: base relativa `./` nos 3 apps — funciona igual no Pages, no APK e no localhost
+- APKs regenerados e validados de dentro do zip (index.html agora aponta `./assets/...`)
+- **Reinstalar os 2 APKs** (`App-Empresa.apk`, `App-Entregador.apk`)
 
 ## 🎨 Painel da Empresa redesenhado (09/09/2026)
 - `empresa/src/App.css` reescrito para o **tema escuro premium** (slate #0f172a + índigo #6366f1), no mesmo padrão dos painéis admin e entregador
