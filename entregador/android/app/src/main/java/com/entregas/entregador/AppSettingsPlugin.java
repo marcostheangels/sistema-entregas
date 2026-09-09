@@ -106,10 +106,55 @@ public class AppSettingsPlugin extends Plugin {
 
     @PluginMethod
     public void openLocationSettings(PluginCall call) {
-        Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(intent);
-        call.resolve();
+        try {
+            Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            // Fallback: detalhes do app (alguns aparelhos bloqueiam a tela de localizacao)
+            try {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+                call.resolve();
+            } catch (Exception ex) {
+                call.reject("Failed to open location settings");
+            }
+        }
+    }
+
+    @PluginMethod
+    public void requestLocationPermission(PluginCall call) {
+        // Pede a permissao de localizacao do PROPRIO app (popup nativo do Android).
+        // Se o popup nao aparecer (negado 2x), abre a tela de permissoes do app.
+        try {
+            android.app.Activity activity = getActivity();
+            if (activity != null) {
+                ActivityCompat.requestPermissions(activity,
+                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION},
+                        9101);
+                call.resolve();
+                return;
+            }
+            // Sem activity: abre a tela de permissoes do app
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+                call.resolve();
+            } catch (Exception ex) {
+                call.reject("Failed to request location permission");
+            }
+        }
     }
 
     @PluginMethod

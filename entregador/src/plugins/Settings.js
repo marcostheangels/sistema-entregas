@@ -7,6 +7,8 @@ const AppSettings = {
 
   openLocationSettings: () => Plugin.openLocationSettings(),
 
+  requestLocationPermission: () => Plugin.requestLocationPermission(),
+
   openAppSettings: () => Plugin.openAppSettings(),
 
   openNotificationSettings: () => Plugin.openNotificationSettings(),

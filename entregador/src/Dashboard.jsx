@@ -509,8 +509,8 @@ const PermissionRow = ({ icon, name, desc, caminho, status, onAction }) => (
 // Itens de saude agrupados por categoria (tela dedicada) — com o CAMINHO exato para ativar
 const GRUPOS_SAUDE = [
   { titulo: '📍 Localização', itens: [
-    { key: 'localizacao', icon: '📍', name: 'GPS / Localização', desc: 'Necessário para as rotas', acao: 'openLocationSettings',
-      caminho: 'Config. do celular → Localização → Ativar (GPS ligado)' },
+    { key: 'localizacao', icon: '📍', name: 'GPS / Localização', desc: 'Necessário para as rotas', acao: 'requestLocationPermission',
+      caminho: 'Toque em ATIVAR → toque em "Permitir" no popup. Se não aparecer: Config. → Aplicativos → ConectaEntregas → Permissões → Localização → Permitir' },
     { key: 'localizacaoSempre', icon: '🌐', name: 'Permissão Sempre', desc: 'Localização em 2º plano', acao: 'openAppSettings',
       caminho: 'Config. → Aplicativos → ConectaEntregas → Permissões → Localização → "Permitir o tempo todo"' },
   ]},
@@ -521,8 +521,8 @@ const GRUPOS_SAUDE = [
   { titulo: '⚙️ Sistema', itens: [
     { key: 'bateria', icon: '🔋', name: 'Bateria', desc: 'Sem restrição em segundo plano', acao: 'requestIgnoreBatteryOptimization',
       caminho: 'Toque em ATIVAR → escolha "Sem restrições"' },
-    { key: 'sobreposicao', icon: '📑', name: 'Sobreposição', desc: 'Popups sobre outros apps (essencial)', acao: 'openOverlaySettings',
-      caminho: 'Permitir exibir sobre outros apps → Ativar' },
+    { key: 'sobreposicao', icon: '📑', name: 'Sobreposição', desc: 'Popups sobre outros apps (essencial)', acao: 'openAppSettings',
+      caminho: 'Config. → Aplicativos → ConectaEntregas → Exibir sobre outros apps → Permitir' },
     { key: 'acessibilidade', icon: '🛠️', name: 'Acessibilidade', desc: 'Blindagem do GPS', acao: 'openAccessibilitySettings',
       caminho: 'Config. → Acessibilidade → ConectaEntregas → Ativar' },
   ]},
