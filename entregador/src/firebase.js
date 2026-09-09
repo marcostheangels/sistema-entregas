@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDY7Ea1B6ofAHSmFyyXPnUp9SdebZbF1EU",
@@ -16,3 +16,5 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig, 'conecta-entregador');
 export const db = getDatabase(app);
 export const auth = getAuth(app);
+// Sessao de login persistente no dispositivo: sobrevive a fechamentos e reinicios do app
+setPersistence(auth, browserLocalPersistence).catch(() => {});

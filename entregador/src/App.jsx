@@ -7,7 +7,7 @@ import Dashboard from './Dashboard';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.6';
+export const APP_VERSAO = '1.4.7';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -235,13 +235,35 @@ function App() {
     return unsub;
   }, [user, aprovado]);
 
+  // Auto-reparo no nivel do App: se o Android matou o app e o perfil sumiu/apresentou falha
+  // na reconexao, mas o cadastro esta APROVADO, recria o perfil automaticamente —
+  // o entregador NUNCA mais ve o formulario de cadastro por engano.
+  useEffect(() => {
+    if (!user || aprovado !== true || perfilCarregando || temPerfil || !dadosAprov) return;
+    set(ref(db, `entregadores/${user.uid}`), {
+      nome: dadosAprov.nome || dadosAprov.nomeCompleto || '',
+      email: user.email,
+      telefone: (dadosAprov.telefone || '').replace(/\D/g, ''),
+      cpf: (dadosAprov.cpf || '').replace(/\D/g, ''),
+      veiculo: dadosAprov.veiculo || '',
+      placa: (dadosAprov.placa || '').toUpperCase(),
+      endereco: dadosAprov.endereco || '',
+      status: 'disponivel',
+      createdAt: Date.now()
+    }).catch(() => {});
+  }, [user, aprovado, temPerfil, perfilCarregando, dadosAprov]);
+
   if (loading) return <div className="loading">Carregando...</div>;
 
   if (versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
 
   if (user && aprovado === false) return <AguardandoAprovacao user={user} versao={APP_VERSAO} />;
 
-  if (user && !perfilCarregando && !temPerfil) return <CompletarCadastro user={user} dados={dadosAprov} />;
+  if (user && !perfilCarregando && !temPerfil) {
+    // Cadastro aprovado com perfil em restauracao: NUNCA mostra o formulario de cadastro
+    if (dadosAprov) return <div className="loading">Restaurando seu cadastro...</div>;
+    return <CompletarCadastro user={user} dados={dadosAprov} />;
+  }
 
   return user ? <Dashboard user={user} versao={APP_VERSAO} /> : <Auth onAuth={setUser} versao={APP_VERSAO} />;
 }
