@@ -123,7 +123,7 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  // Desenha a rota de estrada (OSRM)
+  // Desenha a rota de estrada (OSRM) — ambar buscando o pedido, verde levando
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -136,6 +136,9 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
           ? [{ type: 'Feature', geometry: { type: 'LineString', coordinates: rotaInfo.coords } }]
           : []
       });
+      if (map.getLayer('linha-rota')) {
+        map.setPaintProperty('linha-rota', 'line-color', rotaInfo?.cor || '#6366f1');
+      }
     };
     if (prontoRef.current) aplicar(); else map.once('load', aplicar);
   }, [rotaInfo]);
@@ -1098,23 +1101,41 @@ export default function Dashboard({ user, versao }) {
       // Se tivermos a posição do entregador, calculamos desde onde ele está.
       // Se não, calculamos apenas entre os pontos da entrega.
       const p = posicao || { lat: oLat, lng: oLng };
+      const url = (wp) => `https://router.project-osrm.org/route/v1/driving/${wp}?overview=full&geometries=geojson`;
 
-      // direto=true (apos a coleta): rota [Entregador] -> [Entrega]
-      // direto=false: rota [Entregador] -> [Coleta] -> [Entrega]
-      const waypoints = direto
-        ? `${p.lng},${p.lat};${dLng},${dLat}`
-        : `${p.lng},${p.lat};${oLng},${oLat};${dLng},${dLat}`;
-      const url = `https://router.project-osrm.org/route/v1/driving/${waypoints}?overview=full&geometries=geojson`;
-      const res = await fetch(url).then(r => r.json());
+      if (direto) {
+        // LEVANDO O PEDIDO: rota de estrada so ate a casa do cliente
+        const res = await fetch(url(`${p.lng},${p.lat};${dLng},${dLat}`)).then(r => r.json()).catch(() => ({}));
+        if (res.routes?.[0]) {
+          const r = res.routes[0];
+          setRotaInfo({
+            distanciaTotal: r.distance / 1000,
+            distanciaColeta: 0,
+            distanciaEntrega: r.distance / 1000,
+            tempoTotal: Math.round(r.duration / 60),
+            cor: '#10b981',
+            coords: r.geometry.coordinates
+          });
+        }
+        return;
+      }
 
-      if (res.routes?.[0]) {
-        const r = res.routes[0];
+      // BUSCANDO O PEDIDO: desenha a rota so ate a coleta (amber);
+      // o trecho coleta->destino fica calculado por fora para o "KM LEVAR"
+      const [rBusca, rLeva] = await Promise.all([
+        fetch(url(`${p.lng},${p.lat};${oLng},${oLat}`)).then(r => r.json()).catch(() => ({})),
+        fetch(url(`${oLng},${oLat};${dLng},${dLat}`)).then(r => r.json()).catch(() => ({}))
+      ]);
+      const rb = rBusca.routes?.[0];
+      const rl = rLeva?.routes?.[0];
+      if (rb) {
         setRotaInfo({
-          distanciaTotal: r.distance / 1000,
-          distanciaColeta: direto ? 0 : (r.legs[0]?.distance || 0) / 1000,
-          distanciaEntrega: (r.legs[r.legs.length - 1]?.distance || 0) / 1000,
-          tempoTotal: Math.round(r.duration / 60),
-          coords: r.geometry.coordinates
+          distanciaTotal: rl ? (rb.distance + rl.distance) / 1000 : rb.distance / 1000,
+          distanciaColeta: rb.distance / 1000,
+          distanciaEntrega: rl ? rl.distance / 1000 : null,
+          tempoTotal: Math.round((rb.duration + (rl?.duration || 0)) / 60),
+          cor: '#f59e0b',
+          coords: rb.geometry.coordinates
         });
       }
     } catch (e) {
@@ -1159,14 +1180,16 @@ export default function Dashboard({ user, versao }) {
     ? null
     : (rotaInfo?.tempoTotal ?? (kmDestino != null ? minEstimado(kmDestino) : null));
 
-  // Recalcula a rota real quando o entregador se move (mais de 300 m do ultimo calculo)
+  // Recalcula a rota ao vivo quando o entregador se move (mais de 300 m do ultimo calculo):
+  // buscando = rota ate a coleta (amber); levando = rota ate a casa do cliente (verde)
   const ultimaPosRota = useRef(null);
   useEffect(() => {
     if (!entregaAtual || !posicao) return;
-    if (entregaAtual.status !== 'em_transito') return;
+    const emTransito = entregaAtual.status === 'em_transito';
+    if (entregaAtual.status !== 'aceite' && !emTransito) return;
     if (!ultimaPosRota.current || haversineKm(ultimaPosRota.current, posicao) > 0.3) {
       ultimaPosRota.current = posicao;
-      calcRoute(entregaAtual, true);
+      calcRoute(entregaAtual, emTransito);
     }
   }, [posicao, entregaAtual]);
 
@@ -1385,7 +1408,7 @@ export default function Dashboard({ user, versao }) {
                 </div>
               )}
               <div className="route-meta">
-                <div className="meta-box"><span className="meta-val">{emColeta ? (kmColeta != null ? kmColeta.toFixed(1) : '--') : '—'}</span><span className="meta-lab">KM BUSCAR</span></div>
+                <div className="meta-box"><span className="meta-val">{emColeta ? (rotaInfo?.distanciaColeta ?? (kmColeta != null ? kmColeta.toFixed(1) : '--')) : '—'}</span><span className="meta-lab">KM BUSCAR</span></div>
                 <div className="meta-box"><span className="meta-val">{levarKm != null ? levarKm.toFixed(1) : '--'}</span><span className="meta-lab">KM LEVAR</span></div>
                 <div className="meta-box"><span className="meta-val">{rotaInfo?.distanciaTotal?.toFixed(1) || '--'}</span><span className="meta-lab">KM ROTA</span></div>
                 <div className="meta-box"><span className="meta-val">{rotaInfo?.tempoTotal || '--'}</span><span className="meta-lab">MIN ROTA</span></div>

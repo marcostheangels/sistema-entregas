@@ -7,7 +7,7 @@ import Dashboard from './Dashboard';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.3.1';
+export const APP_VERSAO = '1.3.2';
 const URL_APK = 'https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk';
 
 // Compara "1.2.3" com "1.10.0" corretamente
