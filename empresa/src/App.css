@@ -764,3 +764,23 @@ header {
   -webkit-text-fill-color: #f8fafc;
   caret-color: #f8fafc;
 }
+
+.login-card button[type='submit'] {
+  background: linear-gradient(to right, var(--primary), var(--secondary));
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  width: 100%;
+  box-shadow: 0 6px 18px -6px rgba(99, 102, 241, 0.55);
+  transition: filter 0.15s, transform 0.15s;
+}
+
+.login-card button[type='submit']:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.login-card button[type='submit']:active { transform: translateY(0); filter: brightness(0.95); }
+.login-card button[type='submit']:disabled { opacity: 0.6; cursor: wait; }
