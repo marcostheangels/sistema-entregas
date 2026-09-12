@@ -115,34 +115,44 @@
         }
       }
 
-      // Tenta a fonte primaria (entregas/{id}); se nao existir, usa o espelho publico (rastreio/{id})
-      db.ref('entregas/' + id).once('value').then(s => {
-        let e = s.val();
-        if (e) {
-          entregaAtual = e;
-          desenhar(e);
-          vigiarPosicao(e.entregadorId);
-          // Tambem fica de olho se o entregadorId mudar
-          db.ref('entregas/' + id + '/entregadorId').on('value', s2 => vigiarPosicao(s2.val()));
-        } else {
+      // Tenta a fonte primaria (entregas/{id}); se nao existir ou nao tiver permissao, usa o espelho publico (rastreio/{id})
+      function carregarEntrega() {
+        return db.ref('entregas/' + id).once('value').then(s => {
+          const e = s.val();
+          if (e) return { fonte: 'entregas', ...e };
           return db.ref('rastreio/' + id).once('value').then(rs => {
             const r = rs.val();
-            if (!r) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
-            entregaAtual = r;
-            desenhar(r);
-            // Se o espelho ja tiver uma posicao gravada, mostra imediatamente
-            if (r.lat && r.lng) atualizarMarcadorEntregador(r.lat, r.lng);
-            // Escuta atualizacoes da posicao no proprio rastreio (espelho publico)
-            db.ref('rastreio/' + id + '/lat').on('value', () => {});
-            db.ref('rastreio/' + id).on('value', rs2 => {
-              const r2 = rs2.val();
-              if (r2 && r2.lat && r2.lng) atualizarMarcadorEntregador(r2.lat, r2.lng);
-            });
-            // E tambem tenta vigiar a posicao real do entregador, se o espelho tiver entregadorId
-            if (r.entregadorId) vigiarPosicao(r.entregadorId);
-            db.ref('rastreio/' + id + '/entregadorId').on('value', s2 => vigiarPosicao(s2.val()));
+            if (!r) return null;
+            return { fonte: 'rastreio', ...r };
           });
+        }).catch(() => {
+          // Sem permissao para entregas: usa o espelho publico
+          return db.ref('rastreio/' + id).once('value').then(rs => {
+            const r = rs.val();
+            if (!r) return null;
+            return { fonte: 'rastreio', ...r };
+          });
+        });
+      }
+
+      carregarEntrega().then(d => {
+        if (!d) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
+        entregaAtual = d;
+        desenhar(d);
+        // Posicao em tempo real: prioriza posicoes/{entregadorId}; senao usa o espelho rastreio/{id}
+        if (d.entregadorId) {
+          vigiarPosicao(d.entregadorId);
+          db.ref('entregas/' + id + '/entregadorId').on('value', s2 => vigiarPosicao(s2.val()));
         }
+        // Espelho publico: escuta lat/lng diretamente (funciona mesmo sem regras novas)
+        db.ref('rastreio/' + id).on('value', rs2 => {
+          const r = rs2.val();
+          if (r && r.lat != null && r.lng != null) atualizarMarcadorEntregador(r.lat, r.lng);
+          if (r && r.status && entregaAtual && entregaAtual.status !== r.status) {
+            entregaAtual = { ...entregaAtual, ...r };
+            desenhar(entregaAtual);
+          }
+        });
       }).catch(err => {
         console.error('Erro ao carregar rastreio:', err);
         caixa.innerHTML = '<div class="erro"><h1>⚠️ Erro de conexão</h1><p>Tente novamente em instantes.</p></div>';

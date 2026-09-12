@@ -188,8 +188,9 @@ function PainelAprovacoes({ user }) {
       const list = [];
       snap.forEach(c => list.push({ id: c.key, ...c.val() }));
       list.sort((a, b) => (a.createdAt || a.criadoEm || 0) - (b.createdAt || b.criadoEm || 0));
+      console.log('[Master] entregas recebidas:', list.length, list.map(e => ({ id: e.id, status: e.status, entregadorId: e.entregadorId })));
       setEntregas(list);
-    }, () => {});
+    }, err => { console.error('[Master] erro entregas:', err); });
     const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}), () => {});
     const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}), () => {});
     const u4 = onValue(ref(db, 'presenca'), snap => setPresenca(snap.val() || {}), () => {});
