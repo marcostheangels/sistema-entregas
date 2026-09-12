@@ -87,12 +87,45 @@
     if (!id) { caixa.innerHTML = '<div class="erro"><h1>🔗 Link inválido</h1><p>Peça o link de rastreio correto à empresa.</p></div>'; }
     else {
       const db = firebase.database();
-      let mapa = null, marcador = null;
-      db.ref('rastreio/' + id).on('value', s => {
-        const d = s.val();
-        if (!d) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
-        desenhar(d);
+      let mapa = null, marcadorEntregador = null, marcadorDestino = null;
+      let entregaAtual = null;
+
+      // Escuta a entrega (status, entregadorId, destino)
+      db.ref('entregas/' + id).on('value', s => {
+        const e = s.val();
+        if (!e) {
+          // Fallback para compatibilidade com links antigos que apontam para rastreio/{id}
+          db.ref('rastreio/' + id).once('value').then(rs => {
+            const r = rs.val();
+            if (!r) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
+            desenhar(r);
+          });
+          return;
+        }
+        entregaAtual = e;
+        desenhar(e);
       }, () => { caixa.innerHTML = '<div class="erro"><h1>⚠️ Erro de conexão</h1><p>Tente novamente em instantes.</p></div>'; });
+
+      // Escuta a posição REAL do entregador em tempo real
+      db.ref('entregas/' + id + '/entregadorId').on('value', s => {
+        const uid = s.val();
+        if (!uid) return;
+        db.ref('posicoes/' + uid).off('value');
+        db.ref('posicoes/' + uid).on('value', sp => {
+          const p = sp.val();
+          if (!p || !mapa) return;
+          const online = p.online && (Date.now() - (p.timestamp || 0)) < 120000;
+          if (!online) return; // ignora posicoes antigas
+          if (!marcadorEntregador) {
+            const icone = L.divIcon({ html: '<div style="font-size:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🛵</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
+            marcadorEntregador = L.marker([p.lat, p.lng], { icon: icone }).addTo(mapa);
+            mapa.setView([p.lat, p.lng], 15);
+          } else {
+            marcadorEntregador.setLatLng([p.lat, p.lng]);
+            mapa.panTo([p.lat, p.lng]);
+          }
+        });
+      });
     }
 
     function desenhar(d) {
@@ -103,12 +136,18 @@
         ? 'Seu pedido foi entregue. Obrigado!'
         : (d.status === 'em_transito'
           ? 'Seu pedido está a caminho! Acompanhe a moto no mapa.'
-          : (d.status === 'aceite' ? 'Um motoboy já pegou seu pedido e está indo buscar.' : 'Estamos localizando um motoboy para você.'));
+          : (d.status === 'aceite' ? 'O entregador aceitou e está indo buscar o pedido.' : 'Estamos localizando um entregador para você.'));
+
+      const entregadorNome = d.entregadorNome || (d.entregador && d.entregador.nome) || null;
+      const infoEntregador = entregadorNome
+        ? `<p class="sub" style="margin-top:10px">👤 Entregador: <strong>${escapar(entregadorNome)}</strong></p>`
+        : '';
 
       caixa.innerHTML = `
         <div class="status-card">
           <div class="status-grande"><span class="bolinha ${d.status === 'entregue' ? 'ativa' : ''}" style="background:${corBola}"></span>${nomeStatus.toUpperCase()}</div>
           <p class="sub">${destaque}</p>
+          ${infoEntregador}
           <ul class="passos">
             ${PASSOS.map((p, j) => {
               const txt = p.t.replace(/^[^\s]+\s/, '');
@@ -126,18 +165,24 @@
       setTimeout(() => mapa.invalidateSize(), 50);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
 
-      if (d.lat && d.lng) {
-        if (!marcador) {
-          const icone = L.divIcon({ html: '<div style="font-size:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🛵</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
-          marcador = L.marker([d.lat, d.lng], { icon: icone }).addTo(mapa);
-          mapa.setView([d.lat, d.lng], 15);
-        } else {
-          marcador.setLatLng([d.lat, d.lng]);
-          mapa.panTo([d.lat, d.lng]);
+      const destinoLat = d.destinoLat || d.destino?.lat;
+      const destinoLng = d.destinoLng || d.destino?.lng;
+      if (destinoLat && destinoLng) {
+        if (marcadorDestino) marcadorDestino.setLatLng([destinoLat, destinoLng]);
+        else {
+          const icone = L.divIcon({ html: '<div style="font-size:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🏠</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 34] });
+          marcadorDestino = L.marker([destinoLat, destinoLng], { icon: icone }).addTo(mapa).bindPopup('Endereço de entrega');
         }
-      } else {
-        if (d.destinoLat && d.destinoLng) { mapa.setView([d.destinoLat, d.destinoLng], 14); }
       }
+
+      // Só centraliza no destino automaticamente se ainda não temos posição do entregador
+      if (destinoLat && destinoLng && !marcadorEntregador) {
+        mapa.setView([destinoLat, destinoLng], 14);
+      }
+    }
+
+    function escapar(t) {
+      const div = document.createElement('div'); div.textContent = String(t || ''); return div.innerHTML;
     }
   </script>
 </body>
