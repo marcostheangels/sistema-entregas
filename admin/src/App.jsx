@@ -184,17 +184,28 @@ function PainelAprovacoes({ user }) {
   // (leitura DIRETA sem orderBy: as regras do Firebase negam query com orderByChild
   //  fora de status/entregadorId/empresaId — ordenamos aqui no cliente)
   useEffect(() => {
+    let cancelado = false;
+    const carregar = async () => {
+      try {
+        const inicial = await get(ref(db, 'entregas'));
+        const list0 = [];
+        inicial.forEach(c => list0.push({ id: c.key, ...c.val() }));
+        console.log('[Master] GET inicial entregas:', list0.length, list0.map(e => ({ id: e.id, status: e.status, entregadorId: e.entregadorId })));
+        if (!cancelado) setEntregas(list0);
+      } catch (e) { console.error('[Master] GET inicial erro:', e); }
+    };
+    carregar();
     const u1 = onValue(ref(db, 'entregas'), snap => {
       const list = [];
       snap.forEach(c => list.push({ id: c.key, ...c.val() }));
+      console.log('[Master] onValue entregas raw children:', snap.size || (snap.numChildren ? snap.numChildren() : '?'), '| list:', list.length, list.map(e => ({ id: e.id, status: e.status, entregadorId: e.entregadorId })));
       list.sort((a, b) => (a.createdAt || a.criadoEm || 0) - (b.createdAt || b.criadoEm || 0));
-      console.log('[Master] entregas recebidas:', list.length, list.map(e => ({ id: e.id, status: e.status, entregadorId: e.entregadorId })));
-      setEntregas(list);
+      if (!cancelado) setEntregas(list);
     }, err => { console.error('[Master] erro entregas:', err); });
     const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}), () => {});
     const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}), () => {});
     const u4 = onValue(ref(db, 'presenca'), snap => setPresenca(snap.val() || {}), () => {});
-    return () => { u1(); u2(); u3(); u4(); };
+    return () => { cancelado = true; u1(); u2(); u3(); u4(); };
   }, []);
 
   // Tick para expirar presencas antigas sem novas gravacoes
