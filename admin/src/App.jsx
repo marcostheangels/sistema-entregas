@@ -197,7 +197,12 @@ function PainelAprovacoes({ user }) {
     carregar();
     const u1 = onValue(ref(db, 'entregas'), snap => {
       const list = [];
-      snap.forEach(c => list.push({ id: c.key, ...c.val() }));
+      console.log('[Master] onValue snap type/size/exists:', typeof snap, snap.size, snap.exists && snap.exists(), 'numChildren:', snap.numChildren && snap.numChildren());
+      console.log('[Master] onValue snap.val() keys:', Object.keys(snap.val() || {}));
+      snap.forEach((c, i) => {
+        console.log('[Master] forEach item', i, 'key:', c.key, 'val exists:', c.exists && c.exists(), 'val:', c.val() ? { status: c.val().status, entregadorId: c.val().entregadorId } : null);
+        list.push({ id: c.key, ...c.val() });
+      });
       console.log('[Master] onValue entregas raw children:', snap.size || (snap.numChildren ? snap.numChildren() : '?'), '| list:', list.length, list.map(e => ({ id: e.id, status: e.status, entregadorId: e.entregadorId })));
       list.sort((a, b) => (a.createdAt || a.criadoEm || 0) - (b.createdAt || b.criadoEm || 0));
       if (!cancelado) setEntregas(list);
