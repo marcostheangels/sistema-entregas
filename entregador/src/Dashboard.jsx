@@ -1442,7 +1442,7 @@ export default function Dashboard({ user, versao }) {
                     } else {
                       // Espelho publico de rastreio: cliente passa a ver o status
                       rastreioAtivoRef.current = item.id;
-                      update(ref(db, `rastreio/${item.id}`), { status: 'aceite', aceiteEm: Date.now() }).catch(() => {});
+                      update(ref(db, `rastreio/${item.id}`), { status: 'aceite', entregadorId: user.uid, entregadorNome: nomeEntregador, aceiteEm: Date.now() }).catch(() => {});
                       // Abre a navegacao na hora, estilo Uber: rota ambar ate a coleta
                       const aceita = { ...item, status: 'aceite', entregadorId: user.uid };
                       setEntregaEmRota(aceita);
@@ -1563,7 +1563,7 @@ export default function Dashboard({ user, versao }) {
                     onClick={async () => {
                       // Marca que pegou o pedido: muda para LEVANDO e recalcula a rota direto ao destino
                       await update(ref(db, `entregas/${entregaAtual.id}`), { status: 'em_transito', coletaAt: Date.now() });
-                      update(ref(db, `rastreio/${entregaAtual.id}`), { status: 'em_transito', coletaEm: Date.now() }).catch(() => {});
+                      update(ref(db, `rastreio/${entregaAtual.id}`), { status: 'em_transito', entregadorId: user.uid, coletaEm: Date.now() }).catch(() => {});
                       if (!isOnline) toggleTracking(true);
                       ultimaPosRota.current = null;
                       calcRoute(entregaAtual, true);

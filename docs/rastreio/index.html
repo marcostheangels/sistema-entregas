@@ -89,42 +89,63 @@
       const db = firebase.database();
       let mapa = null, marcadorEntregador = null, marcadorDestino = null;
       let entregaAtual = null;
+      let unsubPosicao = null;
 
-      // Escuta a entrega (status, entregadorId, destino)
-      db.ref('entregas/' + id).on('value', s => {
-        const e = s.val();
-        if (!e) {
-          // Fallback para compatibilidade com links antigos que apontam para rastreio/{id}
-          db.ref('rastreio/' + id).once('value').then(rs => {
-            const r = rs.val();
-            if (!r) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
-            desenhar(r);
-          });
-          return;
-        }
-        entregaAtual = e;
-        desenhar(e);
-      }, () => { caixa.innerHTML = '<div class="erro"><h1>⚠️ Erro de conexão</h1><p>Tente novamente em instantes.</p></div>'; });
-
-      // Escuta a posição REAL do entregador em tempo real
-      db.ref('entregas/' + id + '/entregadorId').on('value', s => {
-        const uid = s.val();
+      function vigiarPosicao(uid) {
         if (!uid) return;
-        db.ref('posicoes/' + uid).off('value');
-        db.ref('posicoes/' + uid).on('value', sp => {
+        if (unsubPosicao) { unsubPosicao(); unsubPosicao = null; }
+        unsubPosicao = db.ref('posicoes/' + uid).on('value', sp => {
           const p = sp.val();
           if (!p || !mapa) return;
-          const online = p.online && (Date.now() - (p.timestamp || 0)) < 120000;
-          if (!online) return; // ignora posicoes antigas
-          if (!marcadorEntregador) {
-            const icone = L.divIcon({ html: '<div style="font-size:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🛵</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
-            marcadorEntregador = L.marker([p.lat, p.lng], { icon: icone }).addTo(mapa);
-            mapa.setView([p.lat, p.lng], 15);
-          } else {
-            marcadorEntregador.setLatLng([p.lat, p.lng]);
-            mapa.panTo([p.lat, p.lng]);
-          }
+          const online = p.online === true && (Date.now() - (p.timestamp || 0)) < 120000;
+          if (!online) return;
+          atualizarMarcadorEntregador(p.lat, p.lng);
         });
+      }
+
+      function atualizarMarcadorEntregador(lat, lng) {
+        if (!mapa || typeof lat !== 'number' || typeof lng !== 'number') return;
+        if (!marcadorEntregador) {
+          const icone = L.divIcon({ html: '<div style="font-size:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🛵</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
+          marcadorEntregador = L.marker([lat, lng], { icon: icone }).addTo(mapa);
+          mapa.setView([lat, lng], 15);
+        } else {
+          marcadorEntregador.setLatLng([lat, lng]);
+          mapa.panTo([lat, lng]);
+        }
+      }
+
+      // Tenta a fonte primaria (entregas/{id}); se nao existir, usa o espelho publico (rastreio/{id})
+      db.ref('entregas/' + id).once('value').then(s => {
+        let e = s.val();
+        if (e) {
+          entregaAtual = e;
+          desenhar(e);
+          vigiarPosicao(e.entregadorId);
+          // Tambem fica de olho se o entregadorId mudar
+          db.ref('entregas/' + id + '/entregadorId').on('value', s2 => vigiarPosicao(s2.val()));
+        } else {
+          return db.ref('rastreio/' + id).once('value').then(rs => {
+            const r = rs.val();
+            if (!r) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
+            entregaAtual = r;
+            desenhar(r);
+            // Se o espelho ja tiver uma posicao gravada, mostra imediatamente
+            if (r.lat && r.lng) atualizarMarcadorEntregador(r.lat, r.lng);
+            // Escuta atualizacoes da posicao no proprio rastreio (espelho publico)
+            db.ref('rastreio/' + id + '/lat').on('value', () => {});
+            db.ref('rastreio/' + id).on('value', rs2 => {
+              const r2 = rs2.val();
+              if (r2 && r2.lat && r2.lng) atualizarMarcadorEntregador(r2.lat, r2.lng);
+            });
+            // E tambem tenta vigiar a posicao real do entregador, se o espelho tiver entregadorId
+            if (r.entregadorId) vigiarPosicao(r.entregadorId);
+            db.ref('rastreio/' + id + '/entregadorId').on('value', s2 => vigiarPosicao(s2.val()));
+          });
+        }
+      }).catch(err => {
+        console.error('Erro ao carregar rastreio:', err);
+        caixa.innerHTML = '<div class="erro"><h1>⚠️ Erro de conexão</h1><p>Tente novamente em instantes.</p></div>';
       });
     }
 
