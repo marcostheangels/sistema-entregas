@@ -185,25 +185,9 @@ function PainelAprovacoes({ user }) {
   //  fora de status/entregadorId/empresaId — ordenamos aqui no cliente)
   useEffect(() => {
     let cancelado = false;
-    const carregar = async () => {
-      try {
-        const inicial = await get(ref(db, 'entregas'));
-        const list0 = [];
-        inicial.forEach(c => list0.push({ id: c.key, ...c.val() }));
-        console.log('[Master] GET inicial entregas:', list0.length, list0.map(e => ({ id: e.id, status: e.status, entregadorId: e.entregadorId })));
-        if (!cancelado) setEntregas(list0);
-      } catch (e) { console.error('[Master] GET inicial erro:', e); }
-    };
-    carregar();
     const u1 = onValue(ref(db, 'entregas'), snap => {
       const list = [];
-      console.log('[Master] onValue snap type/size/exists:', typeof snap, snap.size, snap.exists && snap.exists(), 'numChildren:', snap.numChildren && snap.numChildren());
-      console.log('[Master] onValue snap.val() keys:', Object.keys(snap.val() || {}));
-      snap.forEach((c, i) => {
-        console.log('[Master] forEach item', i, 'key:', c.key, 'val exists:', c.exists && c.exists(), 'val:', c.val() ? { status: c.val().status, entregadorId: c.val().entregadorId } : null);
-        list.push({ id: c.key, ...c.val() });
-      });
-      console.log('[Master] onValue entregas raw children:', snap.size || (snap.numChildren ? snap.numChildren() : '?'), '| list:', list.length, list.map(e => ({ id: e.id, status: e.status, entregadorId: e.entregadorId })));
+      snap.forEach(c => list.push({ id: c.key, ...c.val() }));
       list.sort((a, b) => (a.createdAt || a.criadoEm || 0) - (b.createdAt || b.criadoEm || 0));
       if (!cancelado) setEntregas(list);
     }, err => { console.error('[Master] erro entregas:', err); });
