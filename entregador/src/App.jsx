@@ -233,6 +233,15 @@ function App() {
   const [dadosAprov, setDadosAprov] = useState(null);
   const [tipoConta, setTipoConta] = useState(null); // 'entregador' | 'empresa' | ... — bloqueia login cruzado
   const [versaoMinima, setVersaoMinima] = useState(null);
+  const [conexaoFalhou, setConexaoFalhou] = useState(false); // Firebase nao respondeu: tela de erro com tentar de novo
+
+  // Timeout de segurança: se o Firebase Auth não responder em 12s (WebSocket bloqueado/rede ruim),
+  // mostra tela de erro com botão de tentar de novo — em vez de 'Carregando...' travado para sempre.
+  useEffect(() => {
+    if (!loading || conexaoFalhou) return;
+    const t = setTimeout(() => setConexaoFalhou(true), 12000);
+    return () => clearTimeout(t);
+  }, [loading, conexaoFalhou]);
 
   // Versao minima definida pelo Master: app antigo se auto-bloqueia (vale mesmo sem login)
   useEffect(() => {
@@ -288,7 +297,22 @@ function App() {
     }).catch(() => {});
   }, [user, aprovado, temPerfil, perfilCarregando, dadosAprov]);
 
-  if (loading) return <div className="loading">Carregando...</div>;
+  if (loading) return conexaoFalhou ? (
+    <div className="loading" style={{textAlign:'center', padding:'40px 24px'}}>
+      <div style={{fontSize:'2.5rem', marginBottom:12}}>📡</div>
+      <h2 style={{marginBottom:8}}>Sem conexão com o servidor</h2>
+      <p style={{opacity:0.7, marginBottom:20, fontSize:'0.9rem', lineHeight:1.6}}>
+        Verifique sua internet (Wi-Fi ou dados móveis).<br/>
+        Se o problema continuar, atualize o <strong>Android System WebView</strong> e o <strong>Google Chrome</strong> na Play Store.
+      </p>
+      <button
+        onClick={() => { setConexaoFalhou(false); setLoading(true); window.location.reload(); }}
+        style={{background:'var(--primary)', color:'#fff', border:'none', borderRadius:12, padding:'14px 28px', fontWeight:800, fontSize:'0.9rem', cursor:'pointer'}}
+      >
+        🔄 TENTAR NOVAMENTE
+      </button>
+    </div>
+  ) : <div className="loading">Carregando...</div>;
 
   if (versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
 

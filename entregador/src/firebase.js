@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase } from 'firebase/database';
+import { getDatabase, forceLongPolling } from 'firebase/database';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -14,6 +14,9 @@ const firebaseConfig = {
 
 // Nome unico por app: separa a sessao de login de cada painel no mesmo navegador
 export const app = initializeApp(firebaseConfig, 'conecta-entregador');
+// WebViews Android antigos: WebSocket pode falhar em silencio e o app fica travado em 'Carregando'.
+// forceLongPolling garante conexao em qualquer WebView (leva ~1s a mais, mas sempre conecta).
+forceLongPolling();
 export const db = getDatabase(app);
 export const auth = getAuth(app);
 // Sessao de login persistente no dispositivo: sobrevive a fechamentos e reinicios do app
