@@ -25,6 +25,14 @@ const versaoMenorQue = (a, b) => {
 // publicada junto da release — o entregador ve claramente o que esta baixando.
 function AtualizacaoObrigatoria({ atual, minima }) {
   const alvo = minima || atual;
+  // Se o APK da versão alvo não existe (Master configurou versão sem release), usa o nome fixo (sempre a última publicada)
+  const [href, setHref] = useState(`https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas-${alvo}.apk`);
+  useEffect(() => {
+    const urlAlvo = `https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas-${alvo}.apk`;
+    fetch(urlAlvo, { method: 'HEAD' })
+      .then(r => { if (!r.ok) setHref('https://marcostheangels.github.io/sistema-entregas/apk/App-Entregador.apk'); })
+      .catch(() => {});
+  }, [alvo]);
   return (
     <div className="login-container">
       <div className="login-card" style={{textAlign: 'center'}}>
@@ -35,7 +43,7 @@ function AtualizacaoObrigatoria({ atual, minima }) {
           Atualize para continuar trabalhando — é rápido e não perde seus dados.
         </p>
         <a
-          href={`https://marcostheangels.github.io/sistema-entregas/apk/ConectaEntregas-${alvo}.apk`}
+          href={href}
           download={`ConectaEntregas-${alvo}.apk`}
           style={{display: 'block', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff',
                   borderRadius: 12, padding: '14px', fontFamily: 'Archivo, sans-serif', fontWeight: 800,
