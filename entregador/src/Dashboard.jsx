@@ -927,6 +927,13 @@ export default function Dashboard({ user, versao }) {
     }
   }, [entregas]);
 
+  // Retoma a tela de devolução se o app fechou antes de confirmar (entrega entregue + aguardandoDevolucao)
+  useEffect(() => {
+    if (telaDevolucao) return;
+    const pendente = entregas.find(e => e.entregadorId === user.uid && e.aguardandoDevolucao && !e.devolucaoConfirmadaEm);
+    if (pendente) setTelaDevolucao(pendente);
+  }, [entregas, user.uid, telaDevolucao]);
+
   // Preenche o nome do entregador nas entregas antigas que ficaram sem (relatorio da empresa)
   useEffect(() => {
     if (!user.uid) return;
@@ -1023,6 +1030,7 @@ export default function Dashboard({ user, versao }) {
 
   // ===== COMPROVANTE DE ENTREGA: codigo de verificacao (sem foto) =====
   const [modalCodigo, setModalCodigo] = useState(null);
+  const [telaDevolucao, setTelaDevolucao] = useState(null);
   const [codigoDigitado, setCodigoDigitado] = useState('');
   const [erroCodigo, setErroCodigo] = useState('');
   const [concluindo, setConcluindo] = useState(false);
@@ -1042,11 +1050,15 @@ export default function Dashboard({ user, versao }) {
     if (concluindo) return;
     setConcluindo(true);
     try {
-      await update(ref(db, `entregas/${modalCodigo.id}`), { status: 'entregue', entregueEm: Date.now(), codigoValidado: true });
+      // Com devolução pedida (maquininha/dinheiro): NÃO finaliza aqui — entra na tela de devolução.
+      // A entrega só é finalizada de verdade quando ele confirmar que devolveu na empresa.
+      const precisaDevolver = modalCodigo.pedirDevolucao && !modalCodigo.devolucaoConfirmadaEm;
+      await update(ref(db, `entregas/${modalCodigo.id}`), {
+        status: 'entregue', entregueEm: Date.now(), codigoValidado: true,
+        aguardandoDevolucao: !!precisaDevolver
+      });
       await update(ref(db, `rastreio/${modalCodigo.id}`), { status: 'entregue', entregueEm: Date.now() }).catch(() => {});
       rastreioAtivoRef.current = null;
-      setEntregaEmRota(null);
-      setRotaInfo(null);
       setMensagemNova(null);
       lastMsgTs.current = Date.now();
       // Apaga o historico de mensagens desta entrega na hora
@@ -1057,9 +1069,14 @@ export default function Dashboard({ user, versao }) {
         if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
       } catch { /* sem permissao */ }
       setModalCodigo(null);
-      // Aviso de devolucao: a empresa pediu que ele volte para devolver maquininha/dinheiro etc.
-      if (modalCodigo.pedirDevolucao && !modalCodigo.devolucaoConfirmadaEm) {
-        alert('🔄 ATENÇÃO — DEVOLUÇÃO PENDENTE\n\nA empresa pediu para você VOLTR NA EMPRESA após esta entrega para devolver maquininha, dinheiro, comprovante etc.\n\nConfirme a devolução na aba EM CURSO / HISTÓRICO quando devolver.');
+      if (precisaDevolver) {
+        // Abre a tela de devolução: trava o app até ele voltar na empresa e confirmar
+        setTelaDevolucao({ ...modalCodigo, status: 'entregue', aguardandoDevolucao: true });
+        setEntregaEmRota(null);
+        setRotaInfo(null);
+      } else {
+        setEntregaEmRota(null);
+        setRotaInfo(null);
       }
     } catch (e) {
       alert('Erro ao concluir: ' + e.message);
@@ -1068,10 +1085,21 @@ export default function Dashboard({ user, versao }) {
     }
   };
 
+  const finalizarAposDevolucao = async () => {
+    if (!telaDevolucao) return;
+    if (!window.confirm('✅ Confirmar que você VOLTOU NA EMPRESA e devolveu maquininha/dinheiro etc.?\n\nA entrega só é finalizada depois desta confirmação.')) return;
+    try {
+      await update(ref(db, `entregas/${telaDevolucao.id}`), { aguardandoDevolucao: false, devolucaoConfirmadaEm: Date.now() });
+      setTelaDevolucao(null);
+    } catch (e) {
+      alert('Erro ao confirmar devolução: ' + e.message);
+    }
+  };
+
   const confirmarDevolucao = async (ent) => {
     if (!window.confirm(`🔄 Confirmar que você VOLTOU na empresa e devolveu tudo (maquininha, dinheiro etc.)?`)) return;
     try {
-      await update(ref(db, `entregas/${ent.id}`), { devolucaoConfirmadaEm: Date.now() });
+      await update(ref(db, `entregas/${ent.id}`), { aguardandoDevolucao: false, devolucaoConfirmadaEm: Date.now() });
     } catch (e) {
       alert('Erro ao confirmar devolução: ' + e.message);
     }
@@ -1269,6 +1297,8 @@ export default function Dashboard({ user, versao }) {
   // Ocupacao: estou com entrega ativa? Existem outros entregadores livres online?
   const ocupadosIds = new Set(entregas.filter(e => e.status === 'aceite' || e.status === 'em_transito').map(e => e.entregadorId).filter(Boolean));
   const souOcupadoAgora = ocupadosIds.has(user.uid);
+  // Deve devolver na empresa: enquanto nao confirmar, nao pode aceitar novas entregas
+  const devolucaoPendente = entregas.some(e => e.entregadorId === user.uid && e.aguardandoDevolucao && !e.devolucaoConfirmadaEm);
   const livresOnlineAgora = Object.entries(posicoesRef.current).filter(([id, p]) =>
     id !== user.uid && p.online && Date.now() - (p.timestamp || 0) < 120000 && !ocupadosIds.has(id)
   ).length;
@@ -1281,6 +1311,8 @@ export default function Dashboard({ user, versao }) {
 
     if (statusFiltro === 'disponivel') {
       if (e.status !== 'pendente') return false;
+      // Devolução pendente: sem novas entregas até devolver maquininha/dinheiro na empresa
+      if (devolucaoPendente) return false;
       // Ocupado so enxerga novas ofertas quando TODOS os online estiverem ocupados
       if (souOcupadoAgora && livresOnlineAgora > 0) return false;
       return true;
@@ -1508,6 +1540,29 @@ export default function Dashboard({ user, versao }) {
           onLimparLog={() => setDebugLog([])}
           onClose={() => setSaudeAberta(false)}
         />
+      )}
+
+      {/* Tela de devolução: com maquininha/dinheiro, a entrega SÓ finaliza quando ele devolver na empresa */}
+      {telaDevolucao && (
+        <div className="modal-comprovante" style={{background: 'rgba(2, 6, 23, 0.97)'}}>
+          <div className="modal-caixa" style={{border: '2px solid #f59e0b', maxWidth: '420px'}}>
+            <h3 style={{color: '#fbbf24'}}>🔄 DEVOLUÇÃO PENDENTE</h3>
+            <p style={{margin: '12px 0', lineHeight: 1.6}}>
+              Pedido entregue ao cliente! ✅<br/><br/>
+              Mas esta entrega tem <strong style={{color: '#fbbf24'}}>
+              {telaDevolucao.pagamento === 'cartao' ? 'MAQUININHA' : 'DINHEIRO'}</strong> para devolver.
+              <strong> VOLTE NA EMPRESA ({String(telaDevolucao.empresaNome || 'a empresa').toUpperCase()})</strong> para devolver.
+            </p>
+            <p style={{fontSize: '0.78rem', opacity: 0.75, marginBottom: '12px'}}>
+              A entrega só será FINALIZADA quando você confirmar a devolução. Enquanto isso, o botão de finalizar fica travado.
+            </p>
+            <div className="modal-botoes">
+              <button className="ok" style={{background: '#f59e0b', width: '100%'}} onClick={finalizarAposDevolucao}>
+                ✅ JÁ DEVOLVI NA EMPRESA — FINALIZAR
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal de conclusao: codigo de verificacao */}
