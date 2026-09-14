@@ -116,6 +116,12 @@
       }
 
       // Tenta a fonte primaria (entregas/{id}); se nao existir ou nao tiver permissao, usa o espelho publico (rastreio/{id})
+      // Fallback final: REST API direta (funciona mesmo se o SDK do Firebase falhar por rede/websocket)
+      async function buscarREST(caminho) {
+        const resp = await fetch(`https://entregadores-e-empresas-default-rtdb.firebaseio.com/${caminho}.json`);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+      }
       function carregarEntrega() {
         return db.ref('entregas/' + id).once('value').then(s => {
           const e = s.val();
@@ -125,13 +131,13 @@
             if (!r) return null;
             return { fonte: 'rastreio', ...r };
           });
-        }).catch(() => {
-          // Sem permissao para entregas: usa o espelho publico
-          return db.ref('rastreio/' + id).once('value').then(rs => {
-            const r = rs.val();
+        }).catch(async () => {
+          // Sem permissao para entregas: usa o espelho publico; se o SDK falhar, tenta REST
+          try {
+            const r = await buscarREST('rastreio/' + id);
             if (!r) return null;
             return { fonte: 'rastreio', ...r };
-          });
+          } catch { return null; }
         });
       }
 
@@ -157,6 +163,25 @@
       }).catch(err => {
         console.error('Erro ao carregar rastreio:', err);
         caixa.innerHTML = '<div class="erro"><h1>⚠️ Erro de conexão</h1><p>Tente novamente em instantes.</p></div>';
+        // Ultimo recurso: carrega via REST sem depender do SDK
+        buscarREST('rastreio/' + id).then(r => {
+          if (!r) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
+          entregaAtual = { fonte: 'rastreio', ...r };
+          desenhar(entregaAtual);
+          observarMapa();
+          if (r.entregadorId) vigiarPosicao(r.entregadorId);
+          // Polling leve via REST a cada 15s (sem SDK)
+          setInterval(() => {
+            buscarREST('rastreio/' + id).then(r2 => {
+              if (!r2) return;
+              if (r2.lat != null && r2.lng != null) atualizarMarcadorEntregador(r2.lat, r2.lng);
+              if (r2.status && entregaAtual && entregaAtual.status !== r2.status) {
+                entregaAtual = { ...entregaAtual, ...r2 };
+                desenhar(entregaAtual);
+              }
+            }).catch(() => {});
+          }, 15000);
+        }).catch(() => {});
       });
     }
 
