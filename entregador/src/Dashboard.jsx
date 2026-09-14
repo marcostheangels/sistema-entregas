@@ -596,14 +596,26 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
   }, [posicao, entrega.origemCoords]);
 
   return (
-    <div className="delivery-card animate-fade">
+    <div className="delivery-card animate-fade" style={entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm ? { border: '2px solid #f59e0b' } : undefined}>
       <div className="delivery-header">
         <span className="delivery-price">R$ {entrega.valor}</span>
         <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
+          {entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm && (
+            <span style={{background: '#f59e0b', color: '#fff', borderRadius: '6px', padding: '2px 8px', fontSize: '0.62rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: '3px'}}>🔄 VOLTA NA EMPRESA</span>
+          )}
           {distParaColeta !== null && <span className="delivery-dist" style={{fontSize: '0.7rem', color: 'var(--warning)'}}>Até a coleta: {distParaColeta.toFixed(1)} km (~{minEstimado(distParaColeta)} min)</span>}
           {entrega.distanciaKm && <span className="delivery-dist" style={{fontSize: '0.7rem'}}>Entrega: {entrega.distanciaKm.toFixed(1)} km</span>}
         </div>
       </div>
+      {entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm && (
+        <div style={{background: '#f59e0b', color: '#fff', borderRadius: '10px', padding: '10px 12px', margin: '0 14px 10px', fontSize: '0.82rem', fontWeight: 800, lineHeight: 1.45, boxShadow: '0 2px 8px rgba(245,158,11,0.35)'}}>
+          🔄 ESTA ENTREGA EXIGE VOLTA NA EMPRESA!<br/>
+          <span style={{fontWeight: 600, fontSize: '0.75rem'}}>
+            Após entregar, você DEVE voltar em <strong>{nomeEmpresa}</strong> para devolver {' '}
+            {entrega.pagamento === 'cartao' ? 'A MAQUININHA' : 'O DINHEIRO da corrida'}. A entrega só finaliza depois da devolução.
+          </span>
+        </div>
+      )}
       <div className="delivery-body">
         <div className="address-step">
           <div className="step-marker">
@@ -638,11 +650,6 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
           </div>
         </div>
       </div>
-      {entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm && (
-        <div style={{background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.45)', borderRadius: '10px', padding: '10px 12px', margin: '0 14px 10px', fontSize: '0.8rem', fontWeight: 700, color: '#fbbf24'}}>
-          🔄 ATENÇÃO: após entregar, VOLTE NA EMPRESA ({nomeEmpresa}) para devolver maquininha, dinheiro etc.
-        </div>
-      )}
       {entrega.devolucaoConfirmadaEm && (
         <div style={{background: 'rgba(16, 185, 129, 0.12)', borderRadius: '10px', padding: '10px 12px', margin: '0 14px 10px', fontSize: '0.78rem', fontWeight: 700, color: '#34d399'}}>
           ✅ Devolução confirmada em {new Date(entrega.devolucaoConfirmadaEm).toLocaleString('pt-BR')}
