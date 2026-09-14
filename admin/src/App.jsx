@@ -89,9 +89,17 @@ function MapaTempoReal({ posicoes, entregas, entregadores, rastreio }) {
     .map(([id, p]) => ({
       id, p,
       perfil: entregadores[id] || {},
-      entrega: entregas.find(e => e.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(e.status))
-        // Fallback: espelho publico de rastreio (sempre atualizado pelo app do entregador)
-        || Object.entries(rastreio || {}).find(([, r]) => r && r.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(r.status))?.[1] || null
+      entrega: (() => {
+        const direta = entregas.find(e => e.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(e.status));
+        if (direta) return { ...direta, fonte: 'entregas' };
+        // Fallback: espelho publico de rastreio (a chave É o id da entrega)
+        const par = Object.entries(rastreio || {}).find(([, r]) => r && r.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(r.status));
+        if (!par) return null;
+        const [rid, r] = par;
+        // Enriquece com o registro completo de entregas se existir (mesmo id)
+        const cheia = entregas.find(e => e.id === rid);
+        return { ...cheia, ...r, id: rid, origem: cheia?.origem || r.origem || '', destino: cheia?.destino || r.bairro || '', empresaNome: cheia?.empresaNome || r.empresa || '', fonte: 'rastreio' };
+      })()
     }));
 
   useEffect(() => {
@@ -154,6 +162,7 @@ function MapaTempoReal({ posicoes, entregas, entregadores, rastreio }) {
                     📦 {a.entrega.codigo ? `#${a.entrega.codigo} · ` : ''}{a.entrega.empresaNome || 'Empresa'} · {a.entrega.status === 'em_transito' ? 'levando' : 'buscando'}<br/>
                     🏢 {a.entrega.origem || '—'}<br/>
                     🏠 {a.entrega.destino || '—'}{a.entrega.valor ? <><br/>💰 R$ {Number(a.entrega.valor).toFixed(2)}</> : null}
+                    {a.entrega.fonte === 'rastreio' && <><br/><a href={`https://marcostheangels.github.io/sistema-entregas/rastreio/?pedido=${a.entrega.id}`} target="_blank" rel="noreferrer" style={{color:'#38bdf8'}}>🔗 ver rastreio do pedido</a></>}
                   </small>
                 ) : (
                   <small className="rel-status livre">🟢 Livre — aguardando pedido</small>
