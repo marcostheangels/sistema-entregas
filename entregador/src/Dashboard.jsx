@@ -1571,7 +1571,7 @@ export default function Dashboard({ user, versao }) {
                 <p style={{fontSize: '0.78rem', opacity: 0.75, marginBottom: '12px'}}>
                   Esta tela fecha sozinha assim que a empresa confirmar. Não feche o app.
                 </p>
-                <div style={{textAlign: 'center', fontSize: '1.6rem', animation: 'pulsa 1.5s infinite'}}>⏳</div>
+                <div style={{textAlign: 'center', fontSize: '1.6rem', animation: 'pulse 1.5s infinite'}}>⏳</div>
               </>
             ) : (
               <>
