@@ -91,17 +91,26 @@ const RotaMapa = ({ posicao, entrega, rotaInfo }) => {
   const seguindoRef = useRef(true);
   const [seguindo, setSeguindo] = useState(true);
 
-  // Cria o mapa uma unica vez
+  // Cria o mapa uma unica vez (protegido: sem WebGL/worker o app NAO derruba, mostra aviso)
+  const [mapaFalhou, setMapaFalhou] = useState(false);
   useEffect(() => {
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: estiloMapaOsm,
-      center: [-44.9328, -19.9369],
-      zoom: 16,
-      pitch: 0,
-      bearing: 0,
-      attributionControl: false
-    });
+    if (mapaFalhou) return;
+    let map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: estiloMapaOsm,
+        center: [-44.9328, -19.9369],
+        zoom: 16,
+        pitch: 0,
+        bearing: 0,
+        attributionControl: false
+      });
+    } catch (e) {
+      console.error('[RotaMapa] falha ao criar mapa:', e);
+      setMapaFalhou(true);
+      return;
+    }
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
     map.on('load', () => {
@@ -215,20 +224,31 @@ const MiniMapa = ({ posicao, online, onExpand }) => {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
+  const [mapaFalhou, setMapaFalhou] = useState(false);
 
   useEffect(() => {
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: estiloMapaOsm,
-      center: [-44.9328, -19.9369],
-      zoom: 16,
-      attributionControl: false
-    });
+    if (mapaFalhou) return;
+    let map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: estiloMapaOsm,
+        center: [-44.9328, -19.9369],
+        zoom: 16,
+        attributionControl: false
+      });
+    } catch (e) {
+      // WebView sem WebGL/worker: mapa indisponivel, mas o app continua (GPS e entregas funcionam)
+      console.error('[MiniMapa] falha ao criar mapa:', e);
+      setMapaFalhou(true);
+      return;
+    }
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    map.on('error', (e) => { console.error('[MiniMapa] erro do mapa:', e && e.error); });
     map.on('load', () => map.resize());
-    return () => { map.remove(); mapRef.current = null; };
-  }, []);
+    return () => { try { map.remove(); } catch { /* ja removido */ } mapRef.current = null; };
+  }, [mapaFalhou]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -253,8 +273,16 @@ const MiniMapa = ({ posicao, online, onExpand }) => {
         </div>
       </div>
       <div className="minimapa-mapa">
-        <div ref={containerRef} style={{height: '100%', width: '100%'}} />
-        {!posicao && <div className="minimapa-aguardando">Aguardando sinal do GPS...</div>}
+        {mapaFalhou ? (
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',fontSize:'0.78rem',opacity:0.6,textAlign:'center',padding:12}}>
+            Mapa indisponível neste aparelho — o rastreamento continua funcionando normalmente.
+          </div>
+        ) : (
+          <>
+            <div ref={containerRef} style={{height: '100%', width: '100%'}} />
+            {!posicao && <div className="minimapa-aguardando">Aguardando sinal do GPS...</div>}
+          </>
+        )}
       </div>
     </div>
   );
@@ -266,19 +294,28 @@ const MapaCheio = ({ posicao, online, onClose }) => {
   const mapRef = useRef(null);
   const markerRef = useRef(null);
 
+  const [mapaFalhou, setMapaFalhou] = useState(false);
   useEffect(() => {
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: estiloMapaOsm,
-      center: [-44.9328, -19.9369],
-      zoom: 16,
-      attributionControl: false
-    });
+    if (mapaFalhou) return;
+    let map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: estiloMapaOsm,
+        center: [-44.9328, -19.9369],
+        zoom: 16,
+        attributionControl: false
+      });
+    } catch (e) {
+      console.error('[MapaCheio] falha ao criar mapa:', e);
+      setMapaFalhou(true);
+      return;
+    }
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
     map.on('load', () => map.resize());
-    return () => { map.remove(); mapRef.current = null; };
-  }, []);
+    return () => { try { map.remove(); } catch { /* ja removido */ } mapRef.current = null; };
+  }, [mapaFalhou]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -301,7 +338,13 @@ const MapaCheio = ({ posicao, online, onClose }) => {
         <span className={`minimapa-status ${online ? 'on' : 'off'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
       <div style={{flex: 1, position: 'relative'}}>
-        <div ref={containerRef} style={{height: '100%', width: '100%'}} />
+        {mapaFalhou ? (
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',fontSize:'0.8rem',opacity:0.6,textAlign:'center',padding:20}}>
+            Mapa indisponível neste aparelho.
+          </div>
+        ) : (
+          <div ref={containerRef} style={{height: '100%', width: '100%'}} />
+        )}
         {posicao && (
           <div style={{position: 'absolute', bottom: '16px', left: '50%', transform: 'translateX(-50%)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '99px', padding: '8px 18px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 1}}>
             📌 {posicao.lat.toFixed(5)}, {posicao.lng.toFixed(5)}

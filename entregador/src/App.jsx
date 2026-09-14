@@ -4,6 +4,7 @@ import { ref, get, onValue, set } from 'firebase/database';
 import { auth, db } from './firebase';
 import Auth from './Auth';
 import Dashboard from './Dashboard';
+import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
@@ -327,7 +328,7 @@ function App() {
     return <CompletarCadastro user={user} dados={dadosAprov} />;
   }
 
-  return user ? <Dashboard user={user} versao={APP_VERSAO} /> : <Auth onAuth={setUser} versao={APP_VERSAO} />;
+  return <ErrorBoundary>{user ? <Dashboard user={user} versao={APP_VERSAO} /> : <Auth onAuth={setUser} versao={APP_VERSAO} />}</ErrorBoundary>;
 }
 
 export default App;
