@@ -77,7 +77,7 @@ function LoginScreen() {
 const PALETA_MOTOS = ['#10b981', '#6366f1', '#ec4899', '#f59e0b', '#06b6d4', '#8b5cf6', '#ef4444', '#f97316', '#14b8a6', '#3b82f6', '#eab308', '#a3e635'];
 const corDaMoto = (id) => PALETA_MOTOS[String(id).split('').reduce((s, c) => s + c.charCodeAt(0), 0) % PALETA_MOTOS.length];
 
-function MapaTempoReal({ posicoes, entregas, entregadores }) {
+function MapaTempoReal({ posicoes, entregas, entregadores, rastreio }) {
   const divRef = useRef(null);
   const mapRef = useRef(null);
   const marcadoresRef = useRef({});
@@ -89,7 +89,9 @@ function MapaTempoReal({ posicoes, entregas, entregadores }) {
     .map(([id, p]) => ({
       id, p,
       perfil: entregadores[id] || {},
-      entrega: entregas.find(e => e.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(e.status)) || null
+      entrega: entregas.find(e => e.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(e.status))
+        // Fallback: espelho publico de rastreio (sempre atualizado pelo app do entregador)
+        || Object.entries(rastreio || {}).find(([, r]) => r && r.entregadorId === id && !['pendente', 'entregue', 'cancelado'].includes(r.status))?.[1] || null
     }));
 
   useEffect(() => {
@@ -174,6 +176,7 @@ function PainelAprovacoes({ user }) {
   const [posicoes, setPosicoes] = useState({});
   const [entregadores, setEntregadores] = useState({});
   const [presenca, setPresenca] = useState({});
+  const [rastreio, setRastreio] = useState({});
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'aprovacoes'), snap => setSolicitacoes(snap.val() || {}));
@@ -191,10 +194,11 @@ function PainelAprovacoes({ user }) {
       list.sort((a, b) => (a.createdAt || a.criadoEm || 0) - (b.createdAt || b.criadoEm || 0));
       if (!cancelado) setEntregas(list);
     }, err => { console.error('[Master] erro entregas:', err); });
-    const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}), () => {});
-    const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}), () => {});
+    const u2 = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}), err => { console.error('[Master] erro posicoes:', err); });
+    const u3 = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}), err => { console.error('[Master] erro entregadores:', err); });
     const u4 = onValue(ref(db, 'presenca'), snap => setPresenca(snap.val() || {}), () => {});
-    return () => { cancelado = true; u1(); u2(); u3(); u4(); };
+    const u5 = onValue(ref(db, 'rastreio'), snap => setRastreio(snap.val() || {}), () => {});
+    return () => { cancelado = true; u1(); u2(); u3(); u4(); u5(); };
   }, []);
 
   // Tick para expirar presencas antigas sem novas gravacoes
@@ -554,7 +558,7 @@ function PainelAprovacoes({ user }) {
         </div>
       </div>
 
-      <MapaTempoReal posicoes={posicoes} entregas={entregas} entregadores={entregadores} />
+      <MapaTempoReal posicoes={posicoes} entregas={entregas} entregadores={entregadores} rastreio={rastreio} />
 
       <div className="admin-mapa-section">
         <h4>🏢 Empresas usando o painel agora ({empresasOnline.length})</h4>
