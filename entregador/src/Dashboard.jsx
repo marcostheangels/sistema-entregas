@@ -668,13 +668,19 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
       ) : null}
       {entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm && ['entregue'].includes(entrega.status) && (
         <div className="delivery-footer">
-          <button
-            onClick={() => onConfirmarDevolucao(entrega)}
-            className="btn-full"
-            style={{ background: '#f59e0b', color: 'white' }}
-          >
-            🔄 CONFIRMAR DEVOLUÇÃO NA EMPRESA
-          </button>
+          {entrega.devolucaoSolicitadaEm ? (
+            <div style={{textAlign: 'center', width: '100%', fontSize: '0.78rem', fontWeight: 700, color: '#38bdf8', padding: '8px'}}>
+              ⏳ Avisado às {new Date(entrega.devolucaoSolicitadaEm).toLocaleTimeString('pt-BR')} — aguardando a empresa confirmar
+            </div>
+          ) : (
+            <button
+              onClick={() => onConfirmarDevolucao(entrega)}
+              className="btn-full"
+              style={{ background: '#f59e0b', color: 'white' }}
+            >
+              🔄 JÁ DEVOLVI — AVISAR A EMPRESA
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -934,11 +940,12 @@ export default function Dashboard({ user, versao }) {
     }
   }, [entregas]);
 
-  // Retoma a tela de devolução se o app fechou antes de confirmar (entrega entregue + aguardandoDevolucao)
+  // Retoma a tela de devolução se o app fechou antes da empresa confirmar (entrega entregue + sem devolucaoConfirmadaEm)
   useEffect(() => {
-    if (telaDevolucao) return;
-    const pendente = entregas.find(e => e.entregadorId === user.uid && e.aguardandoDevolucao && !e.devolucaoConfirmadaEm);
-    if (pendente) setTelaDevolucao(pendente);
+    const pendente = entregas.find(e => e.entregadorId === user.uid && e.pedirDevolucao && e.status === 'entregue' && !e.devolucaoConfirmadaEm);
+    if (pendente && (!telaDevolucao || telaDevolucao.id !== pendente.id)) setTelaDevolucao(pendente);
+    // Fecha sozinha quando a empresa confirmar a devolução
+    if (telaDevolucao && !pendente) setTelaDevolucao(null);
   }, [entregas, user.uid, telaDevolucao]);
 
   // Preenche o nome do entregador nas entregas antigas que ficaram sem (relatorio da empresa)
@@ -1094,19 +1101,20 @@ export default function Dashboard({ user, versao }) {
 
   const finalizarAposDevolucao = async () => {
     if (!telaDevolucao) return;
-    if (!window.confirm('✅ Confirmar que você VOLTOU NA EMPRESA e devolveu maquininha/dinheiro etc.?\n\nA entrega só é finalizada depois desta confirmação.')) return;
+    if (!window.confirm('🔄 Avisar a empresa que você VOLTOU e devolveu maquininha/dinheiro?\n\nA empresa vai conferir e confirmar para liberar você.')) return;
     try {
-      await update(ref(db, `entregas/${telaDevolucao.id}`), { aguardandoDevolucao: false, devolucaoConfirmadaEm: Date.now() });
-      setTelaDevolucao(null);
+      // Avisa a empresa: grava o horário e deixa a empresa CONFIRMAR que recebeu a devolução
+      await update(ref(db, `entregas/${telaDevolucao.id}`), { devolucaoSolicitadaEm: Date.now() });
+      setTelaDevolucao(prev => prev ? { ...prev, devolucaoSolicitadaEm: Date.now() } : prev);
     } catch (e) {
-      alert('Erro ao confirmar devolução: ' + e.message);
+      alert('Erro ao avisar devolução: ' + e.message);
     }
   };
 
   const confirmarDevolucao = async (ent) => {
-    if (!window.confirm(`🔄 Confirmar que você VOLTOU na empresa e devolveu tudo (maquininha, dinheiro etc.)?`)) return;
+    if (!window.confirm(`🔄 Avisar a empresa que você VOLTOU e devolveu tudo?\n\nA empresa vai conferir e confirmar para liberar você.`)) return;
     try {
-      await update(ref(db, `entregas/${ent.id}`), { aguardandoDevolucao: false, devolucaoConfirmadaEm: Date.now() });
+      await update(ref(db, `entregas/${ent.id}`), { devolucaoSolicitadaEm: Date.now() });
     } catch (e) {
       alert('Erro ao confirmar devolução: ' + e.message);
     }
@@ -1304,8 +1312,8 @@ export default function Dashboard({ user, versao }) {
   // Ocupacao: estou com entrega ativa? Existem outros entregadores livres online?
   const ocupadosIds = new Set(entregas.filter(e => e.status === 'aceite' || e.status === 'em_transito').map(e => e.entregadorId).filter(Boolean));
   const souOcupadoAgora = ocupadosIds.has(user.uid);
-  // Deve devolver na empresa: enquanto nao confirmar, nao pode aceitar novas entregas
-  const devolucaoPendente = entregas.some(e => e.entregadorId === user.uid && e.aguardandoDevolucao && !e.devolucaoConfirmadaEm);
+  // Deve devolver na empresa: enquanto a EMPRESA nao confirmar, nao pode aceitar novas entregas
+  const devolucaoPendente = entregas.some(e => e.entregadorId === user.uid && e.pedirDevolucao && e.status === 'entregue' && !e.devolucaoConfirmadaEm);
   const livresOnlineAgora = Object.entries(posicoesRef.current).filter(([id, p]) =>
     id !== user.uid && p.online && Date.now() - (p.timestamp || 0) < 120000 && !ocupadosIds.has(id)
   ).length;
@@ -1549,25 +1557,41 @@ export default function Dashboard({ user, versao }) {
         />
       )}
 
-      {/* Tela de devolução: com maquininha/dinheiro, a entrega SÓ finaliza quando ele devolver na empresa */}
+      {/* Tela de devolução: com maquininha/dinheiro, a entrega SÓ libera quando a EMPRESA confirmar a devolução */}
       {telaDevolucao && (
         <div className="modal-comprovante" style={{background: 'rgba(2, 6, 23, 0.97)'}}>
           <div className="modal-caixa" style={{border: '2px solid #f59e0b', maxWidth: '420px'}}>
-            <h3 style={{color: '#fbbf24'}}>🔄 DEVOLUÇÃO PENDENTE</h3>
-            <p style={{margin: '12px 0', lineHeight: 1.6}}>
-              Pedido entregue ao cliente! ✅<br/><br/>
-              Mas esta entrega tem <strong style={{color: '#fbbf24'}}>
-              {telaDevolucao.pagamento === 'cartao' ? 'MAQUININHA' : 'DINHEIRO'}</strong> para devolver.
-              <strong> VOLTE NA EMPRESA ({String(telaDevolucao.empresaNome || 'a empresa').toUpperCase()})</strong> para devolver.
-            </p>
-            <p style={{fontSize: '0.78rem', opacity: 0.75, marginBottom: '12px'}}>
-              A entrega só será FINALIZADA quando você confirmar a devolução. Enquanto isso, o botão de finalizar fica travado.
-            </p>
-            <div className="modal-botoes">
-              <button className="ok" style={{background: '#f59e0b', width: '100%'}} onClick={finalizarAposDevolucao}>
-                ✅ JÁ DEVOLVI NA EMPRESA — FINALIZAR
-              </button>
-            </div>
+            {telaDevolucao.devolucaoSolicitadaEm ? (
+              <>
+                <h3 style={{color: '#38bdf8'}}>⏳ AGUARDANDO A EMPRESA</h3>
+                <p style={{margin: '12px 0', lineHeight: 1.6}}>
+                  Você avisou que devolveu às <strong>{new Date(telaDevolucao.devolucaoSolicitadaEm).toLocaleTimeString('pt-BR')}</strong>.<br/><br/>
+                  A empresa <strong>{String(telaDevolucao.empresaNome || '').toUpperCase()}</strong> vai conferir e confirmar para liberar você.
+                </p>
+                <p style={{fontSize: '0.78rem', opacity: 0.75, marginBottom: '12px'}}>
+                  Esta tela fecha sozinha assim que a empresa confirmar. Não feche o app.
+                </p>
+                <div style={{textAlign: 'center', fontSize: '1.6rem', animation: 'pulsa 1.5s infinite'}}>⏳</div>
+              </>
+            ) : (
+              <>
+                <h3 style={{color: '#fbbf24'}}>🔄 DEVOLUÇÃO PENDENTE</h3>
+                <p style={{margin: '12px 0', lineHeight: 1.6}}>
+                  Pedido entregue ao cliente! ✅<br/><br/>
+                  Mas esta entrega tem <strong style={{color: '#fbbf24'}}>
+                  {telaDevolucao.pagamento === 'cartao' ? 'MAQUININHA' : 'DINHEIRO'}</strong> para devolver.
+                  <strong> VOLTE NA EMPRESA ({String(telaDevolucao.empresaNome || 'a empresa').toUpperCase()})</strong> para devolver.
+                </p>
+                <p style={{fontSize: '0.78rem', opacity: 0.75, marginBottom: '12px'}}>
+                  Depois de devolver, toque no botão abaixo. A EMPRESA vai conferir e confirmar — só então você é liberado.
+                </p>
+                <div className="modal-botoes">
+                  <button className="ok" style={{background: '#f59e0b', width: '100%'}} onClick={finalizarAposDevolucao}>
+                    🔄 JÁ DEVOLVI NA EMPRESA — AVISAR
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -762,9 +762,28 @@ export default function Dashboard({ user }) {
                       <span style={{fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b'}}>🔄 DEVOLUÇÃO PENDENTE — o entregador vai voltar para devolver</span>
                     </div>
                   )}
+                  {e.status === 'entregue' && e.pedirDevolucao && !e.devolucaoConfirmadaEm && (
+                    <div className="info-row" style={{background: 'rgba(245, 158, 11, 0.18)', border: '1px solid rgba(245, 158, 11, 0.5)', padding: '10px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                      <span style={{fontSize: '0.8rem', fontWeight: 800, color: '#fbbf24'}}>
+                        ⏳ ENTREGADOR INFORMOU QUE VOLTOU — {e.devolucaoSolicitadaEm ? 'aguardando SUA conferência' : 'aguardando devolução'}
+                      </span>
+                      {e.devolucaoSolicitadaEm && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`✅ CONFIRMAR que ${e.entregadorNome || 'o entregador'} devolveu ${e.pagamento === 'cartao' ? 'a MAQUININHA' : 'o DINHEIRO'} (R$ ${e.valor})?\n\nConfirme só depois de conferir na mão!`)) {
+                              update(ref(db, `entregas/${e.id}`), { devolucaoConfirmadaEm: Date.now() });
+                            }
+                          }}
+                          style={{background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', width: '100%'}}
+                        >
+                          ✅ RECEBI A DEVOLUÇÃO — LIBERAR ENTREGADOR
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {e.devolucaoConfirmadaEm && (
                     <div className="info-row" style={{background: 'rgba(16, 185, 129, 0.12)', padding: '8px', borderRadius: '8px'}}>
-                      <span style={{fontSize: '0.8rem', fontWeight: 800, color: '#10b981'}}>✅ Devolução confirmada {new Date(e.devolucaoConfirmadaEm).toLocaleTimeString('pt-BR')}</span>
+                      <span style={{fontSize: '0.8rem', fontWeight: 800, color: '#10b981'}}>✅ Devolução confirmada pela empresa {new Date(e.devolucaoConfirmadaEm).toLocaleTimeString('pt-BR')}</span>
                     </div>
                   )}
                   <div className="info-row"><span className="info-label">PGTO</span><span>{e.pagamento === 'pix' ? '📱 Pix' : (e.pagamento === 'cartao' ? '💳 Cartão' : (e.pagamento === 'online' ? '🌐 Pago online' : '💵 Dinheiro'))}</span></div>
