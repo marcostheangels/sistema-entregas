@@ -366,6 +366,7 @@ header {
 .badge-pendente { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
 .badge-rota { background: rgba(99, 102, 241, 0.16); color: #a5b4fc; }
 .badge-entregue { background: rgba(16, 185, 129, 0.16); color: #34d399; }
+.badge-cancelada { background: rgba(239, 68, 68, 0.16); color: #f87171; }
 
 .delivery-info { display: grid; gap: 0.6rem; }
 

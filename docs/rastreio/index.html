@@ -139,6 +139,7 @@
         if (!d) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
         entregaAtual = d;
         desenhar(d);
+        observarMapa();
         // Posicao em tempo real: prioriza posicoes/{entregadorId}; senao usa o espelho rastreio/{id}
         if (d.entregadorId) {
           vigiarPosicao(d.entregadorId);
@@ -161,40 +162,46 @@
 
     function desenhar(d) {
       const i = PASSOS.findIndex(p => p.k === d.status);
-      const nomeStatus = i >= 0 ? PASSOS[i].t.replace(/^[^\s]+\s/, '') : d.status;
-      const corBola = d.status === 'entregue' ? '#10b981' : (d.status === 'pendente' ? '#f59e0b' : '#6366f1');
+      const nomeStatus = d.status === 'cancelado' ? 'Pedido cancelado' : (i >= 0 ? PASSOS[i].t.replace(/^[^\s]+\s/, '') : d.status);
+      const corBola = d.status === 'entregue' ? '#10b981' : (d.status === 'pendente' ? '#f59e0b' : (d.status === 'cancelado' ? '#ef4444' : '#6366f1'));
       const destaque = d.status === 'entregue'
         ? 'Seu pedido foi entregue. Obrigado!'
-        : (d.status === 'em_transito'
+        : (d.status === 'cancelado'
+          ? 'Este pedido foi cancelado. Fale com a empresa em caso de dúvidas.'
+          : (d.status === 'em_transito'
           ? 'Seu pedido está a caminho! Acompanhe a moto no mapa.'
-          : (d.status === 'aceite' ? 'O entregador aceitou e está indo buscar o pedido.' : 'Estamos localizando um entregador para você.'));
+          : (d.status === 'aceite' ? 'O entregador aceitou e está indo buscar o pedido.' : 'Estamos localizando um entregador para você.')));
 
       const entregadorNome = d.entregadorNome || (d.entregador && d.entregador.nome) || null;
       const infoEntregador = entregadorNome
         ? `<p class="sub" style="margin-top:10px">👤 Entregador: <strong>${escapar(entregadorNome)}</strong></p>`
         : '';
 
+      // Reusa o mapa ja criado: so substitui o conteudo do card, nao recria o mapa
+      const mapaJaExiste = !!mapa;
       caixa.innerHTML = `
         <div class="status-card">
           <div class="status-grande"><span class="bolinha ${d.status === 'entregue' ? 'ativa' : ''}" style="background:${corBola}"></span>${nomeStatus.toUpperCase()}</div>
           <p class="sub">${destaque}</p>
           ${infoEntregador}
-          <ul class="passos">
+          ${d.status === 'cancelado' ? '' : `<ul class="passos">
             ${PASSOS.map((p, j) => {
               const txt = p.t.replace(/^[^\s]+\s/, '');
               if (j < i) return `<li class="fei">✔ ${txt}</li>`;
               if (j === i) return `<li class="atu"><span class="passo-ico">✔</span> ${txt}</li>`;
               return `<li class="fut">· ${txt}</li>`;
             }).join('')}
-          </ul>
+          </ul>`}
         </div>
         <div class="mapa"><div id="map"></div></div>
         <div class="atualizado">Atualizado ${new Date().toLocaleTimeString('pt-BR')} · ConectaEntregas</div>
       `;
 
-      if (!mapa) mapa = L.map('map', { zoomControl: false }).setView([-16.73, -43.86], 13);
+      if (!mapaJaExiste) {
+        mapa = L.map('map', { zoomControl: false }).setView([-16.73, -43.86], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
+      }
       setTimeout(() => mapa.invalidateSize(), 50);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
 
       const destinoLat = d.destinoLat || d.destino?.lat;
       const destinoLng = d.destinoLng || d.destino?.lng;
@@ -206,10 +213,17 @@
         }
       }
 
-      // Só centraliza no destino automaticamente se ainda não temos posição do entregador
-      if (destinoLat && destinoLng && !marcadorEntregador) {
+      // Só centraliza no destino automaticamente se ainda não temos posição do entregador e o usuario nao mexeu
+      if (destinoLat && destinoLng && !marcadorEntregador && !usuarioMexeu) {
         mapa.setView([destinoLat, destinoLng], 14);
       }
+    }
+
+    // Detecta quando o usuario move o mapa para nao roubar o controle
+    let usuarioMexeu = false;
+    function observarMapa() {
+      if (!mapa) return;
+      mapa.on('dragstart zoomstart', () => { usuarioMexeu = true; });
     }
 
     function escapar(t) {

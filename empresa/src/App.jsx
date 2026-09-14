@@ -61,7 +61,7 @@ function Login({ onAuth }) {
             // entra com a senha informada e reaproveita a conta
             try {
               cred = await signInWithEmailAndPassword(auth, email, senha);
-            } catch (errLogin) {
+            } catch {
               // Senha nao bate com a conta ja existente: aviso claro em vez de "senha incorreta"
               throw { code: 'auth/email-ja-cadastrado-outra-senha' };
             }

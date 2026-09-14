@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { ref, get, set, onValue, update, remove, query, orderByChild } from 'firebase/database';
+import { ref, get, set, onValue, update, remove } from 'firebase/database';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { auth, db } from './firebase';
@@ -214,8 +214,8 @@ function PainelAprovacoes({ user }) {
   // Empresas usando o painel agora (presenca com aviso recente)
   const empresasOnline = Object.entries(presenca).filter(([, p]) => p && p.online && agora - (p.ultimoAviso || 0) < 90000);
   const nomeEmpresaOnline = (id) => solicitacoes?.[id]?.nome || presenca[id]?.email || 'Empresa';
-  // Ultimas entregas (mais recentes primeiro)
-  const ultimasEntregas = [...entregas].sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0)).slice(0, 8);
+  // Ultimas entregas (mais recentes primeiro; criadas com "createdAt")
+  const ultimasEntregas = [...entregas].sort((a, b) => (b.createdAt || b.criadoEm || 0) - (a.createdAt || a.criadoEm || 0)).slice(0, 8);
   const nomeEntregador = (e) => e.entregadorNome || entregadores[e.entregadorId]?.nome || '—';
 
   const lista = Object.entries(solicitacoes || {})
@@ -395,17 +395,80 @@ function PainelAprovacoes({ user }) {
     }
   };
 
-  // ---- Dados completos do cadastro ----
-  const [detalhes, setDetalhes] = useState(null); // { tipo, nome, dados }
+  // ---- Dados completos do cadastro (editavel pelo Master: acesso total) ----
+  const [detalhes, setDetalhes] = useState(null); // { tipo, id, nome, dados }
+  const [detalhesMsg, setDetalhesMsg] = useState('');
   const verDados = async (s) => {
     const no = s.tipo === 'empresa' ? 'empresas' : 'entregadores';
+    setDetalhesMsg('');
     try {
       const snap = await get(ref(db, `${no}/${s.id}`));
-      setDetalhes({ tipo: s.tipo, nome: s.nome, dados: snap.val() || { '(aviso)': 'Perfil não encontrado no banco (talvez já tenha sido resetado).' } });
+      const dados = snap.val() || { '(aviso)': 'Perfil não encontrado no banco (talvez já tenha sido resetado).' };
+      setDetalhes({ tipo: s.tipo, id: s.id, nome: s.nome, dados, originais: snap.val() || {} });
     } catch (e) {
-      setDetalhes({ tipo: s.tipo, nome: s.nome, dados: { '(erro)': e.message } });
+      setDetalhes({ tipo: s.tipo, id: s.id, nome: s.nome, dados: { '(erro)': e.message }, originais: {} });
     }
   };
+
+  // Salva edicoes feitas pelo Master direto no perfil (preserva o tipo original do campo)
+  const salvarDetalhes = async () => {
+    if (!detalhes?.id) return;
+    const no = detalhes.tipo === 'empresa' ? 'empresas' : 'entregadores';
+    const originais = detalhes.originais || {};
+    const limpo = {};
+    Object.entries(detalhes.dados || {}).forEach(([k, v]) => {
+      const orig = originais[k];
+      if (typeof orig === 'object' && orig !== null) return; // objetos complexos nao sao editaveis aqui
+      if (typeof orig === 'number' && v !== '' && !isNaN(Number(v))) { limpo[k] = Number(v); return; }
+      if (typeof orig === 'boolean') { limpo[k] = v === true || v === 'true'; return; }
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') limpo[k] = v;
+    });
+    try {
+      await update(ref(db, `${no}/${detalhes.id}`), limpo);
+      setDetalhesMsg('✅ Dados salvos no perfil.');
+    } catch (e) {
+      setDetalhesMsg('❌ Erro ao salvar: ' + e.message);
+    }
+  };
+
+  // ===== ACESSO TOTAL: CONTROLE DE TODAS AS ENTREGAS =====
+  const [filtroEntregas, setFiltroEntregas] = useState('todas'); // 'todas' | 'pendente' | 'andamento' | 'entregue'
+  const [buscaEntrega, setBuscaEntrega] = useState('');
+  const [entregaDetalhe, setEntregaDetalhe] = useState(null);
+
+  const entregasFiltradas = entregas
+    .filter(e => {
+      if (filtroEntregas === 'pendente' && e.status !== 'pendente') return false;
+      if (filtroEntregas === 'andamento' && !['aceite', 'em_transito'].includes(e.status)) return false;
+      if (filtroEntregas === 'entregue' && e.status !== 'entregue') return false;
+      const t = buscaEntrega.trim().toLowerCase();
+      if (!t) return true;
+      return [e.empresaNome, e.entregadorNome, e.destino, e.origem, e.descricao, e.codigo]
+        .some(v => String(v || '').toLowerCase().includes(t));
+    })
+    .sort((a, b) => (b.createdAt || b.criadoEm || 0) - (a.createdAt || a.criadoEm || 0));
+
+  const excluirEntrega = async (e) => {
+    if (!window.confirm(`Excluir a entrega ${e.codigo ? '#' + e.codigo : '#' + String(e.id).slice(-4)} de ${e.empresaNome || 'empresa'}?\n\nSerão apagados a entrega e o rastreio público dela.\nNão dá para desfazer!`)) return;
+    try {
+      await remove(ref(db, `entregas/${e.id}`));
+      await remove(ref(db, `rastreio/${e.id}`)).catch(() => {});
+      setEntregaDetalhe(null);
+    } catch (err) {
+      window.alert('Erro ao excluir entrega: ' + err.message);
+    }
+  };
+
+  const cancelarEntrega = async (e) => {
+    if (!window.confirm(`Cancelar a entrega ${e.codigo ? '#' + e.codigo : '#' + String(e.id).slice(-4)} de ${e.empresaNome || 'empresa'}?\n\nA entrega volta a ficar visível apenas no histórico como CANCELADA.`)) return;
+    try {
+      await update(ref(db, `entregas/${e.id}`), { status: 'cancelado', canceladoEm: Date.now() });
+      await update(ref(db, `rastreio/${e.id}`), { status: 'cancelado' }).catch(() => {});
+    } catch (err) {
+      window.alert('Erro ao cancelar entrega: ' + err.message);
+    }
+  };
+
 
   // ---- Reset geral ----
   const [resetando, setResetando] = useState('');
@@ -660,13 +723,67 @@ function PainelAprovacoes({ user }) {
                 }</span>
                 <span className="ent-info">
                   <strong>{e.empresaNome || 'Empresa'}</strong> → {nomeEntregador(e)}
-                  <small>{e.destino || ''} {e.criadoEm ? `• ${new Date(e.criadoEm).toLocaleString('pt-BR')}` : ''}</small>
+                  <small>{e.destino || ''} {(e.createdAt || e.criadoEm) ? `• ${new Date(e.createdAt || e.criadoEm).toLocaleString('pt-BR')}` : ''}</small>
                 </span>
                 <span className="ent-valor">R$ {parseFloat(e.valor || 0).toFixed(2)}</span>
               </div>
             ))}
           </div>
         )}
+      </div>
+
+      <div className="admin-monitor">
+        <h4>🛡️ Controle Total de Entregas — acesso master</h4>
+        <div className="admin-stats">
+          <button className={`admin-stat ${filtroEntregas === 'todas' ? 'active' : ''}`} onClick={() => setFiltroEntregas('todas')}>
+            <h3>📦 Todas</h3>
+            <p>{entregas.length}</p>
+          </button>
+          <button className={`admin-stat ${filtroEntregas === 'pendente' ? 'active' : ''}`} onClick={() => setFiltroEntregas('pendente')}>
+            <h3>⏳ Pendentes</h3>
+            <p>{entregas.filter(e => e.status === 'pendente').length}</p>
+          </button>
+          <button className={`admin-stat ${filtroEntregas === 'andamento' ? 'active' : ''}`} onClick={() => setFiltroEntregas('andamento')}>
+            <h3>🚚 Em rota</h3>
+            <p>{emAndamento.length}</p>
+          </button>
+          <button className={`admin-stat ${filtroEntregas === 'entregue' ? 'active' : ''}`} onClick={() => setFiltroEntregas('entregue')}>
+            <h3>✅ Concluídas</h3>
+            <p>{concluidasTotal.length}</p>
+          </button>
+        </div>
+        <div className="admin-busca" style={{marginBottom: 10}}>
+          <input
+            type="text"
+            placeholder="🔍 Buscar entrega por empresa, entregador, endereço, item ou código..."
+            value={buscaEntrega}
+            onChange={e => setBuscaEntrega(e.target.value)}
+          />
+          {buscaEntrega && <button onClick={() => setBuscaEntrega('')}>✕</button>}
+        </div>
+        <div className="admin-entregas">
+          {entregasFiltradas.length === 0 && <div className="admin-vazio">Nenhuma entrega neste filtro.</div>}
+          {entregasFiltradas.map(e => (
+            <div key={e.id} className="admin-entrega-item">
+              <span className={`ent-status ${e.status}`}>{
+                { pendente: '⏳ PENDENTE', aceite: '🛵 ACEITA', em_transito: '🚚 EM ROTA', entregue: '✅ ENTREGUE', cancelado: '⛔ CANCELADA' }[e.status] || e.status
+              }</span>
+              <span className="ent-info">
+                <strong>{e.empresaNome || 'Empresa'}</strong> → {nomeEntregador(e)}
+                {e.codigo ? ` · código #${e.codigo}` : ''}
+                <small>{e.destino || ''} {(e.createdAt || e.criadoEm) ? `• ${new Date(e.createdAt || e.criadoEm).toLocaleString('pt-BR')}` : ''}</small>
+              </span>
+              <span className="ent-valor">R$ {parseFloat(e.valor || 0).toFixed(2)}</span>
+              <span className="admin-item-acoes" style={{marginLeft: 8}}>
+                <button className="admin-btn dados" onClick={() => setEntregaDetalhe(e)}>VER</button>
+                {!['entregue', 'cancelado'].includes(e.status) && (
+                  <button className="admin-btn revogar" onClick={() => cancelarEntrega(e)}>CANCELAR</button>
+                )}
+                <button className="admin-btn excluir" onClick={() => excluirEntrega(e)}>EXCLUIR</button>
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="admin-manutencao">
@@ -689,16 +806,69 @@ function PainelAprovacoes({ user }) {
         <div className="admin-modal-fundo" onClick={() => setDetalhes(null)}>
           <div className="admin-modal" onClick={e => e.stopPropagation()}>
             <div className="admin-modal-header">
-              <h3>{detalhes.tipo === 'empresa' ? '🏢' : '🛵'} {detalhes.nome || 'Cadastro'}</h3>
+              <h3>{detalhes.tipo === 'empresa' ? '🏢' : '🛵'} {detalhes.nome || 'Cadastro'} <small style={{color:'#94a3b8', fontWeight:400}}>— edição master</small></h3>
               <button className="admin-btn excluir" onClick={() => setDetalhes(null)}>FECHAR</button>
             </div>
             <div className="admin-dados">
               {Object.entries(detalhes.dados || {}).map(([chave, valor]) => (
                 <div key={chave} className="admin-dado-linha">
                   <span className="admin-dado-chave">{chave}</span>
-                  <span className="admin-dado-valor">{typeof valor === 'object' && valor !== null ? JSON.stringify(valor) : String(valor)}</span>
+                  {typeof valor === 'object' && valor !== null ? (
+                    <span className="admin-dado-valor">{JSON.stringify(valor)}</span>
+                  ) : (
+                    <input
+                      value={String(valor)}
+                      onChange={ev => setDetalhes(d => ({ ...d, dados: { ...d.dados, [chave]: ev.target.value } }))}
+                      style={{flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '6px 8px', color: '#f8fafc', fontSize: '0.8rem'}}
+                    />
+                  )}
                 </div>
               ))}
+            </div>
+            {detalhesMsg && <div style={{marginTop: 10, fontSize: '0.8rem', color: detalhesMsg.startsWith('✅') ? '#10b981' : '#f87171'}}>{detalhesMsg}</div>}
+            <div style={{marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end'}}>
+              <button className="admin-btn backup" onClick={salvarDetalhes}>💾 SALVAR ALTERAÇÕES</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {entregaDetalhe && (
+        <div className="admin-modal-fundo" onClick={() => setEntregaDetalhe(null)}>
+          <div className="admin-modal" onClick={e => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h3>📦 Entrega {entregaDetalhe.codigo ? '#' + entregaDetalhe.codigo : '#' + String(entregaDetalhe.id).slice(-4)}</h3>
+              <button className="admin-btn excluir" onClick={() => setEntregaDetalhe(null)}>FECHAR</button>
+            </div>
+            <div className="admin-dados">
+              {[
+                ['Status', { pendente: '⏳ Pendente', aceite: '🛵 Aceita', em_transito: '🚚 Em rota', entregue: '✅ Entregue', cancelado: '⛔ Cancelada' }[entregaDetalhe.status] || entregaDetalhe.status],
+                ['Empresa', entregaDetalhe.empresaNome || '—'],
+                ['Entregador', entregaDetalhe.entregadorNome || nomeEntregador(entregaDetalhe)],
+                ['Coleta', entregaDetalhe.origemEndereco || entregaDetalhe.origem || '—'],
+                ['Entrega', entregaDetalhe.destinoEndereco || entregaDetalhe.destino || '—'],
+                ['Item', entregaDetalhe.descricao || '—'],
+                ['Valor', `R$ ${parseFloat(entregaDetalhe.valor || 0).toFixed(2)}`],
+                ['Taxa da plataforma', `R$ ${parseFloat(entregaDetalhe.taxaPlataforma || 0).toFixed(2)}`],
+                ['Líquido do entregador', `R$ ${(parseFloat(entregaDetalhe.valor || 0) - parseFloat(entregaDetalhe.taxaPlataforma || 0)).toFixed(2)}`],
+                ['Pagamento', entregaDetalhe.pagamento || '—'],
+                ['Chave Pix', entregaDetalhe.pixChave || '—'],
+                ['Distância', entregaDetalhe.distanciaKm ? `${entregaDetalhe.distanciaKm} km` : '—'],
+                ['Criada em', (entregaDetalhe.createdAt || entregaDetalhe.criadoEm) ? new Date(entregaDetalhe.createdAt || entregaDetalhe.criadoEm).toLocaleString('pt-BR') : '—'],
+                ['Concluída em', entregaDetalhe.entregueEm ? new Date(entregaDetalhe.entregueEm).toLocaleString('pt-BR') : '—'],
+                ['Código do cliente', entregaDetalhe.codigo || '—']
+              ].map(([chave, valor]) => (
+                <div key={chave} className="admin-dado-linha">
+                  <span className="admin-dado-chave">{chave}</span>
+                  <span className="admin-dado-valor">{valor}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end'}}>
+              {!['entregue', 'cancelado'].includes(entregaDetalhe.status) && (
+                <button className="admin-btn revogar" onClick={() => cancelarEntrega(entregaDetalhe)}>CANCELAR ENTREGA</button>
+              )}
+              <button className="admin-btn excluir" onClick={() => excluirEntrega(entregaDetalhe)}>EXCLUIR ENTREGA</button>
             </div>
           </div>
         </div>

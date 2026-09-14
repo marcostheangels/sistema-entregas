@@ -1,12 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { ref, push, set, onValue, update, remove, get, query, orderByChild, equalTo } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-
-import AppSettings from './plugins/Settings';
 
 // -- COMPONENTES AUXILIARES --
 
@@ -32,7 +30,7 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
     if (q.length < 3) { setSugestoes([]); return; }
     const bbox = '-44.2,-17.2,-43.5,-16.3'; // regiao de Montes Claros/MG
     try {
-      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&bbox=${bbox}&limit=6`);
+      const res = await fetch(`https://photon.komoot.io/api?q=${encodeURIComponent(q)}&bbox=${bbox}&limit=6&lang=pt`);
       const data = await res.json();
       const lista = (data.features || []).map(f => ({
         coords: { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] },
@@ -385,7 +383,7 @@ const haversineKmEmp = (a, b) => {
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 };
 
-function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entregas, onBlockToggle }) {
+const MapaFrota = memo(({ entregadores, posicoes, currentUserId, empresaNome, entregas, onBlockToggle }) => {
   const mapRef = useRef(null);
   const centerMoc = [-16.7251, -43.8647];
   const [, setTick] = useState(0);
@@ -456,9 +454,9 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
     <div className="card" style={{padding: '0', overflow: 'hidden'}}>
       <div style={{padding: '1rem 1.5rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
         <h2 style={{margin:0, fontSize:'1rem'}}>🌍 Rastreamento em Tempo Real</h2>
-        <button onClick={() => mapRef.current.setView(centerMoc, 13)} style={{background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem'}}>RE-CENTRALIZAR</button>
+        <button onClick={() => mapRef.current?.setView(centerMoc, 13)} style={{background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem'}}>RE-CENTRALIZAR</button>
       </div>
-      <MapContainer center={centerMoc} zoom={13} style={{ height: '400px', width: '100%' }} ref={mapRef}>
+      <MapContainer center={centerMoc} zoom={13} style={{ height: '400px', width: '100%' }} ref={mapRef} scrollWheelZoom={true} dragging={true}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {/* Rota da entrega em andamento + pontos de coleta e destino */}
         {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup autoPan={false}><div style={{fontWeight: 700}}>🏢 Coleta: {entregaRota.origemEndereco || entregaRota.origem || 'Ponto de coleta'}</div></Popup></Marker>}
@@ -505,7 +503,20 @@ function MapaFrota({ entregadores, posicoes, currentUserId, empresaNome, entrega
       </MapContainer>
     </div>
   );
-}
+}, (prev, next) => {
+  // So remonta se a lista de entregas mudar de tamanho ou se houver nova entrega atribuida/concluida
+  if (prev.entregas.length !== next.entregas.length) return false;
+  const statusMudou = prev.entregas.some((e, i) => next.entregas[i]?.status !== e.status || next.entregas[i]?.entregadorId !== e.entregadorId);
+  if (statusMudou) return false;
+  // Posicoes: re-renderiza quando qualquer entregador mexe no mapa (GPS/online/sinal).
+  // Sem isto os marcadores congelavam na ultima posicao (bug do mapa parado).
+  const assinatura = pos => Object.keys(pos).sort().map(id => {
+    const p = pos[id] || {};
+    return `${id}:${p.online ? 1 : 0}:${p.lat},${p.lng}:${p.timestamp || 0}`;
+  }).join('|');
+  if (assinatura(prev.posicoes) !== assinatura(next.posicoes)) return false;
+  return prev.currentUserId === next.currentUserId && prev.empresaNome === next.empresaNome;
+})
 
 // Som de resposta recebida: dois bipes agudos curtos (diferente dos outros alertas)
 const tocarChimeResposta = () => {
@@ -669,6 +680,7 @@ export default function Dashboard({ user }) {
     if (statusFiltro === 'pendente') return e.status === 'pendente';
     if (statusFiltro === 'em_rota') return ['aceite', 'em_transito'].includes(e.status);
     if (statusFiltro === 'entregue') return e.status === 'entregue';
+    if (statusFiltro === 'cancelada') return e.status === 'cancelado';
     return false;
   });
 
@@ -706,6 +718,10 @@ export default function Dashboard({ user }) {
           <h3>✅ Concluídas</h3>
           <p>{entregas.filter(e=>e.status==='entregue').length}</p>
         </div>
+        <div className={`stat-card clickable ${statusFiltro === 'cancelada' ? 'active' : ''}`} onClick={() => setStatusFiltro('cancelada')}>
+          <h3>⛔ Canceladas</h3>
+          <p>{entregas.filter(e=>e.status==='cancelado').length}</p>
+        </div>
         <div className="stat-card">
           <h3>📡 Online</h3>
           <p>{Object.values(posicoes).filter(p => p.online && Date.now() - (p.timestamp || 0) < 120000).length}</p>
@@ -725,7 +741,7 @@ export default function Dashboard({ user }) {
               <div key={e.id} className={`delivery-item status-${e.status}`}>
                 <div className="delivery-header">
                   <span className="order-id">#ORDEM-{e.id.slice(-4).toUpperCase()}</span>
-                  <span className={`badge badge-${e.status === 'pendente' ? 'pendente' : (e.status === 'entregue' ? 'entregue' : 'rota')}`}>{e.status}</span>
+                  <span className={`badge badge-${e.status === 'pendente' ? 'pendente' : (e.status === 'entregue' ? 'entregue' : (e.status === 'cancelado' ? 'cancelada' : 'rota'))}`}>{e.status}</span>
                 </div>
                 <div className="delivery-info">
                   <div className="info-row"><span className="info-label">COLETA</span><span>{e.origem}</span></div>
@@ -755,6 +771,8 @@ export default function Dashboard({ user }) {
                     <button onClick={() => { remove(ref(db, `entregas/${e.id}`)); remove(ref(db, `rastreio/${e.id}`)); }} className="btn-cancel">CANCELAR</button>
                   ) : e.status === 'entregue' ? (
                     <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Finalizado {e.entregueEm ? new Date(e.entregueEm).toLocaleTimeString() : ''} · ✔ código validado</span>
+                  ) : e.status === 'cancelado' ? (
+                    <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Cancelada {e.canceladoEm ? `· ${new Date(e.canceladoEm).toLocaleString('pt-BR')}` : ''}</span>
                   ) : (
                     <button className="btn-cancel" style={{color: 'var(--secondary)', borderColor: 'rgba(14,165,233,0.4)'}}
                       onClick={() => {
