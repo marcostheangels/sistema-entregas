@@ -527,7 +527,9 @@ const GRUPOS_SAUDE = [
       caminho: 'Config. → Acessibilidade → ConectaEntregas → Ativar' },
   ]},
 ];
-const TOTAL_SAUDE = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.length, 0);
+// Permissoes essenciais para ficar online (sem sobreposicao/acessibilidade, que sao recomendadas)
+const PERMISSOES_ESSENCIAIS = ['localizacao', 'localizacaoSempre', 'notificacao', 'bateria'];
+const TOTAL_ESSENCIAIS = PERMISSOES_ESSENCIAIS.length;
 
 // Tela dedicada de Saude do Sistema (fullscreen, organizada em secoes)
 function TelaSaude({ permissoes, checkPerms, debugLog, onLimparLog, onClose }) {
@@ -584,7 +586,7 @@ function TelaSaude({ permissoes, checkPerms, debugLog, onLimparLog, onClose }) {
   );
 }
 
-const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actionColor }) => {
+const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actionColor, onConfirmarDevolucao }) => {
   // Nome do estabelecimento: nunca mostra e-mail se houver nome real
   const candidatosNome = [entrega.empresaNome, empresas[entrega.empresaId]?.nome].filter(Boolean);
   const nomeEmpresa = candidatosNome.find(n => !n.includes('@')) || candidatosNome[0] || 'Estabelecimento';
@@ -636,6 +638,16 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
           </div>
         </div>
       </div>
+      {entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm && (
+        <div style={{background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.45)', borderRadius: '10px', padding: '10px 12px', margin: '0 14px 10px', fontSize: '0.8rem', fontWeight: 700, color: '#fbbf24'}}>
+          🔄 ATENÇÃO: após entregar, VOLTE NA EMPRESA ({nomeEmpresa}) para devolver maquininha, dinheiro etc.
+        </div>
+      )}
+      {entrega.devolucaoConfirmadaEm && (
+        <div style={{background: 'rgba(16, 185, 129, 0.12)', borderRadius: '10px', padding: '10px 12px', margin: '0 14px 10px', fontSize: '0.78rem', fontWeight: 700, color: '#34d399'}}>
+          ✅ Devolução confirmada em {new Date(entrega.devolucaoConfirmadaEm).toLocaleString('pt-BR')}
+        </div>
+      )}
       {actionLabel ? (
         <div className="delivery-footer">
           <button
@@ -647,6 +659,17 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
           </button>
         </div>
       ) : null}
+      {entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm && ['entregue'].includes(entrega.status) && (
+        <div className="delivery-footer">
+          <button
+            onClick={() => onConfirmarDevolucao(entrega)}
+            className="btn-full"
+            style={{ background: '#f59e0b', color: 'white' }}
+          >
+            🔄 CONFIRMAR DEVOLUÇÃO NA EMPRESA
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -695,7 +718,8 @@ export default function Dashboard({ user, versao }) {
   const [saudeAberta, setSaudeAberta] = useState(false);
   const [mapaCheio, setMapaCheio] = useState(false);
   const okSaude = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.filter(i => permissoes[i.key]).length, 0);
-  const tudoOkSaude = okSaude === TOTAL_SAUDE;
+  const okEssenciais = PERMISSOES_ESSENCIAIS.filter(k => permissoes[k]).length;
+  const tudoOkSaude = okEssenciais === TOTAL_ESSENCIAIS;
 
   const watchId = useRef(null);
   const onlineRef = useRef(false);
@@ -1033,10 +1057,23 @@ export default function Dashboard({ user, versao }) {
         if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
       } catch { /* sem permissao */ }
       setModalCodigo(null);
+      // Aviso de devolucao: a empresa pediu que ele volte para devolver maquininha/dinheiro etc.
+      if (modalCodigo.pedirDevolucao && !modalCodigo.devolucaoConfirmadaEm) {
+        alert('🔄 ATENÇÃO — DEVOLUÇÃO PENDENTE\n\nA empresa pediu para você VOLTR NA EMPRESA após esta entrega para devolver maquininha, dinheiro, comprovante etc.\n\nConfirme a devolução na aba EM CURSO / HISTÓRICO quando devolver.');
+      }
     } catch (e) {
       alert('Erro ao concluir: ' + e.message);
     } finally {
       setConcluindo(false);
+    }
+  };
+
+  const confirmarDevolucao = async (ent) => {
+    if (!window.confirm(`🔄 Confirmar que você VOLTOU na empresa e devolveu tudo (maquininha, dinheiro etc.)?`)) return;
+    try {
+      await update(ref(db, `entregas/${ent.id}`), { devolucaoConfirmadaEm: Date.now() });
+    } catch (e) {
+      alert('Erro ao confirmar devolução: ' + e.message);
     }
   };
 
@@ -1093,7 +1130,7 @@ export default function Dashboard({ user, versao }) {
     // Bloqueio RIGOROSO: TODAS as permissoes da Saude do Sistema precisam estar ativas
     if (status && !tudoOkSaude) {
       permOnlineRef.current = true;
-      addLog('Permissoes incompletas (' + okSaude + '/' + TOTAL_SAUDE + ') — abrindo Saude do Sistema');
+      addLog('Permissoes essenciais incompletas (' + okEssenciais + '/' + TOTAL_ESSENCIAIS + ') — abrindo Saude do Sistema');
       setSaudeAberta(true);
       return;
     }
@@ -1324,20 +1361,10 @@ export default function Dashboard({ user, versao }) {
         <div className="nav-actions">
           <button
             onClick={() => toggleTracking(!isOnline)}
-            className="status-indicator"
-            style={{
-               border: '2px solid ' + (isOnline ? '#10b981' : (tudoOkSaude ? '#f87171' : '#f59e0b')),
-               background: isOnline ? '#10b981' : (tudoOkSaude ? 'rgba(239, 68, 68, 0.85)' : 'rgba(245, 158, 11, 0.9)'),
-               color: isOnline ? '#04250f' : '#fff',
-               fontWeight: 900,
-               fontSize: '0.8rem',
-               letterSpacing: '0.04em',
-               boxShadow: isOnline ? '0 0 12px rgba(16, 185, 129, 0.55)' : '0 0 12px rgba(239, 68, 68, 0.45)',
-               cursor: 'pointer'
-            }}
+            className={`status-indicator ${isOnline ? 'online' : 'offline'}`}
           >
             <div className={`dot ${isOnline ? 'dot-online' : 'dot-offline'}`}></div>
-            {isOnline ? 'ONLINE' : (tudoOkSaude ? 'OFFLINE' : `FALTAM ${TOTAL_SAUDE - okSaude}`)}
+            {isOnline ? 'ONLINE' : (tudoOkSaude ? 'OFFLINE' : `FALTAM ${TOTAL_ESSENCIAIS - okEssenciais}`)}
           </button>
           <button
             className="btn-icon-danger"
@@ -1357,7 +1384,7 @@ export default function Dashboard({ user, versao }) {
       <main className="main-scroll">
         {!isOnline && !tudoOkSaude && (
           <div className="aviso-permissao">
-            <span>⚠️ <strong>Faltam {TOTAL_SAUDE - okSaude} permissõe(s) ({okSaude}/{TOTAL_SAUDE})</strong> — ative TODAS para ficar online e receber entregas.</span>
+            <span>⚠️ <strong>Faltam {TOTAL_ESSENCIAIS - okEssenciais} permissõe(s) essenciais ({okEssenciais}/{TOTAL_ESSENCIAIS})</strong> — ative TODAS para ficar online e receber entregas.</span>
             <button onClick={() => setSaudeAberta(true)}>ATIVAR AGORA</button>
             {msgPermissao && <small>{msgPermissao}</small>}
           </div>
@@ -1382,7 +1409,7 @@ export default function Dashboard({ user, versao }) {
         <button className="saude-chip" onClick={() => setSaudeAberta(true)}>
           <span className="saude-chip-icon">{tudoOkSaude ? '✅' : '⚠️'}</span>
           <span style={{flex: 1}}>
-            <span className="saude-chip-titulo">Saúde do Sistema: {okSaude}/{TOTAL_SAUDE} ativos</span>
+            <span className="saude-chip-titulo">Saúde do Sistema: {okSaude}/{TOTAL_SAUDE} ativos ({okEssenciais}/{TOTAL_ESSENCIAIS} essenciais)</span>
             <span className="saude-chip-sub">{tudoOkSaude ? 'Rastreamento e alertas OK' : 'Toque para revisar e ativar o que falta'}</span>
           </span>
           <span className="saude-chip-abrir">ABRIR ›</span>
@@ -1459,6 +1486,7 @@ export default function Dashboard({ user, versao }) {
                 }}
                 actionLabel={e.status === 'pendente' ? 'ACEITAR' : (e.status === 'aceite' ? 'VER ROTA' : (e.status === 'em_transito' ? 'VER ROTA' : null))}
                 actionColor={e.status === 'aceite' ? '#f59e0b' : (e.status === 'em_transito' ? 'var(--secondary)' : null)}
+                onConfirmarDevolucao={confirmarDevolucao}
               />
             ))
           )}
@@ -1516,6 +1544,11 @@ export default function Dashboard({ user, versao }) {
             <span style={{background: 'rgba(255,255,255,0.08)', borderRadius: '8px', padding: '5px 10px', fontWeight: 700}}>
               {entregaAtual.pagamento === 'pix' ? '📱 COBRAR PIX' : entregaAtual.pagamento === 'cartao' ? '💳 COBRAR NO CARTÃO' : entregaAtual.pagamento === 'online' ? '🌐 JÁ PAGO ONLINE — SÓ ENTREGAR' : '💵 RECEBER EM DINHEIRO'}
             </span>
+            {entregaAtual.pedirDevolucao && !entregaAtual.devolucaoConfirmadaEm && (
+              <span style={{background: 'rgba(245,158,11,0.2)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.5)', borderRadius: '8px', padding: '5px 10px', fontWeight: 800, fontSize: '0.72rem'}}>
+                🔄 DEVOLVER NA EMPRESA DEPOIS
+              </span>
+            )}
             {entregaAtual.pagamento === 'pix' && entregaAtual.pixChave && (
               <button
                 onClick={() => { navigator.clipboard?.writeText(entregaAtual.pixChave); alert('🔑 Chave Pix copiada!\n\n' + entregaAtual.pixChave); }}

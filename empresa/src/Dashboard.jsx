@@ -543,7 +543,7 @@ export default function Dashboard({ user }) {
   const [entregadores, setEntregadores] = useState({});
   const [posicoes, setPosicoes] = useState({});
   const [perfil, setPerfil] = useState(null);
-  const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '', pagamento: 'pix', pixChave: '' });
+  const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '', pagamento: 'pix', pixChave: '', pedirDevolucao: false });
   const [coords, setCoords] = useState({ origem: null, destino: null });
   const [configTaxa, setConfigTaxa] = useState({ porEntrega: 0, percentual: 0 });
   const [statusFiltro, setStatusFiltro] = useState('pendente');
@@ -642,6 +642,7 @@ export default function Dashboard({ user }) {
       await set(novaRef, {
         ...form, codigo, taxaPlataforma,
         pixChave: form.pagamento === 'pix' ? form.pixChave : '',
+        pedirDevolucao: !!form.pedirDevolucao,
         empresaId: user.uid, status: 'pendente',
         origemEndereco, destinoEndereco,
         empresaNome: p?.nome || user.email,
@@ -656,7 +657,7 @@ export default function Dashboard({ user }) {
         destinoLat: coords.destino.lat, destinoLng: coords.destino.lng,
         criadoEm: Date.now()
       });
-      setForm({ origem: '', destino: '', descricao: '', valor: '', pagamento: form.pagamento, pixChave: form.pixChave });
+      setForm({ origem: '', destino: '', descricao: '', valor: '', pagamento: form.pagamento, pixChave: form.pixChave, pedirDevolucao: false });
       setCoords({ origem: null, destino: null });
     } finally {
       setSalvando(false);
@@ -756,6 +757,16 @@ export default function Dashboard({ user }) {
                       </div>
                     </div>
                   )}
+                  {e.pedirDevolucao && ['aceite', 'em_transito'].includes(e.status) && (
+                    <div className="info-row" style={{background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '8px', borderRadius: '8px'}}>
+                      <span style={{fontSize: '0.8rem', fontWeight: 800, color: '#f59e0b'}}>🔄 DEVOLUÇÃO PENDENTE — o entregador vai voltar para devolver</span>
+                    </div>
+                  )}
+                  {e.devolucaoConfirmadaEm && (
+                    <div className="info-row" style={{background: 'rgba(16, 185, 129, 0.12)', padding: '8px', borderRadius: '8px'}}>
+                      <span style={{fontSize: '0.8rem', fontWeight: 800, color: '#10b981'}}>✅ Devolução confirmada {new Date(e.devolucaoConfirmadaEm).toLocaleTimeString('pt-BR')}</span>
+                    </div>
+                  )}
                   <div className="info-row"><span className="info-label">PGTO</span><span>{e.pagamento === 'pix' ? '📱 Pix' : (e.pagamento === 'cartao' ? '💳 Cartão' : (e.pagamento === 'online' ? '🌐 Pago online' : '💵 Dinheiro'))}</span></div>
                   {e.status !== 'entregue' && e.codigo && (
                     <div className="info-row" style={{background: 'rgba(245, 158, 11, 0.12)', padding: '8px', borderRadius: '8px'}}>
@@ -774,11 +785,21 @@ export default function Dashboard({ user }) {
                   ) : e.status === 'cancelado' ? (
                     <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Cancelada {e.canceladoEm ? `· ${new Date(e.canceladoEm).toLocaleString('pt-BR')}` : ''}</span>
                   ) : (
-                    <button className="btn-cancel" style={{color: 'var(--secondary)', borderColor: 'rgba(14,165,233,0.4)'}}
-                      onClick={() => {
-                        const link = `https://marcostheangels.github.io/sistema-entregas/rastreio/?pedido=${e.id}`;
-                        navigator.clipboard?.writeText(link).then(() => alert('🔗 Link de rastreio copiado!\n\nCole no WhatsApp do cliente:\n' + link)).catch(() => window.open(link, '_blank'));
-                      }}>🔗 LINK DE RASTREIO</button>
+                    <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                      <button className="btn-cancel" style={{color: 'var(--secondary)', borderColor: 'rgba(14,165,233,0.4)'}}
+                        onClick={() => {
+                          const link = `https://marcostheangels.github.io/sistema-entregas/rastreio/?pedido=${e.id}`;
+                          navigator.clipboard?.writeText(link).then(() => alert('🔗 Link de rastreio copiado!\n\nCole no WhatsApp do cliente:\n' + link)).catch(() => window.open(link, '_blank'));
+                        }}>🔗 LINK DE RASTREIO</button>
+                      {!e.pedirDevolucao && !e.devolucaoConfirmadaEm && (
+                        <button className="btn-cancel" style={{color: '#f59e0b', borderColor: 'rgba(245,158,11,0.5)'}}
+                          onClick={() => {
+                            if (window.confirm('🔄 Pedir devolução nesta entrega?\n\nO entregador verá o aviso para voltar na empresa devolver maquininha, dinheiro etc.')) {
+                              update(ref(db, `entregas/${e.id}`), { pedirDevolucao: true, pedirDevolucaoEm: Date.now() });
+                            }
+                          }}>🔄 PEDIR DEVOLUÇÃO</button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -820,6 +841,21 @@ export default function Dashboard({ user }) {
                   <input type="text" placeholder="CPF, celular ou chave aleatória" value={form.pixChave} onChange={e=>setForm({...form, pixChave:e.target.value})} className="input-field" />
                 </div>
               )}
+
+              <div className="form-group">
+                <label style={{display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.35)', borderRadius: '10px', padding: '12px'}}>
+                  <input
+                    type="checkbox"
+                    checked={!!form.pedirDevolucao}
+                    onChange={e=>setForm({...form, pedirDevolucao:e.target.checked})}
+                    style={{width: '20px', height: '20px', accentColor: '#f59e0b', flexShrink: 0}}
+                  />
+                  <span style={{fontSize: '0.85rem', lineHeight: 1.4}}>
+                    <strong style={{color: '#f59e0b'}}>🔄 Pedir devolução na volta</strong><br/>
+                    <span style={{opacity: 0.8}}>O entregador deve voltar na empresa para devolver maquininha, dinheiro, comprovante etc.</span>
+                  </span>
+                </label>
+              </div>
 
               <button type="submit" className="btn-primary" style={{marginTop: '1rem'}} disabled={salvando}>{salvando ? 'PUBLICANDO...' : 'PUBLICAR AGORA'}</button>
             </form>
