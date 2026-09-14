@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rastreio — ConectaEntregas</title>
 <link rel="icon" type="image/png" href="../logo-192.png">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="leaflet.css">
 <style>
   * { margin: 0; box-sizing: border-box; }
   body {
@@ -67,7 +67,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="leaflet.js"></script>
   <script>
     firebase.initializeApp({
       apiKey: "AIzaSyDY7Ea1B6ofAHSmFyyXPnUp9SdebZbF1EU",
@@ -81,6 +81,11 @@
       { k: 'em_transito', t: '🛵 Saiu para entrega' },
       { k: 'entregue',    t: '📦 Entregue! Bom apetite / obrigado!' }
     ];
+
+    // Mostra o erro real em vez da tela generica (facilita diagnosticar)
+    window.addEventListener('error', ev => {
+      console.error('Erro capturado:', ev.message, ev.filename, ev.lineno);
+    });
 
     const id = new URLSearchParams(location.search).get('pedido');
     const caixa = document.getElementById('conteudo');
@@ -162,7 +167,7 @@
         });
       }).catch(err => {
         console.error('Erro ao carregar rastreio:', err);
-        caixa.innerHTML = '<div class="erro"><h1>⚠️ Erro de conexão</h1><p>Tente novamente em instantes.</p></div>';
+        caixa.innerHTML = '<div class="erro"><h1>⏳ Conexão lenta — tentando carregar...</h1></div>';
         // Ultimo recurso: carrega via REST sem depender do SDK
         buscarREST('rastreio/' + id).then(r => {
           if (!r) { caixa.innerHTML = '<div class="erro"><h1>🔍 Pedido não encontrado</h1><p>Confira o link com a empresa.</p></div>'; return; }
