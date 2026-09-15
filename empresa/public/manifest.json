@@ -2,7 +2,7 @@
   "name": "ConectaEntregas Empresas",
   "short_name": "Empresas",
   "description": "Sistema de gestão de entregas para empresas",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
