@@ -167,18 +167,6 @@ function MapaTempoReal({ posicoes, entregas, entregadores, rastreio }) {
                 ) : (
                   <small className="rel-status livre">🟢 Livre — aguardando pedido</small>
         )}
-        {/* Prova de entrega: o que realmente esta gravado no banco */}
-        {(histAvisos.length > 0 || histEmp.length > 0) && (
-          <div style={{marginTop: 10, fontSize: '0.72rem', color: '#94a3b8'}}>
-            <div style={{fontWeight: 800, marginBottom: 4}}>📜 Últimos recados gravados no banco:</div>
-            {histAvisos.map(h => (
-              <div key={'g' + h.id} style={{marginBottom: 2}}>📣 TODOS: “{String(h.texto).slice(0, 60)}” <span style={{opacity: 0.6}}>· {h.timestamp ? new Date(h.timestamp).toLocaleString('pt-BR') : ''}</span></div>
-            ))}
-            {histEmp.map(h => (
-              <div key={'e' + h.id} style={{marginBottom: 2}}>🏢 ESTA EMPRESA: “{String(h.texto).slice(0, 60)}” <span style={{opacity: 0.6}}>· {h.timestamp ? new Date(h.timestamp).toLocaleString('pt-BR') : ''}</span></div>
-            ))}
-          </div>
-        )}
       </div>
             </div>
           ))}
@@ -856,6 +844,18 @@ function PainelAprovacoes({ user }) {
                 style={{flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
               <button className="admin-btn backup" onClick={enviarThread} disabled={!!threadFechada}>ENVIAR</button>
             </div>
+          </div>
+        )}
+        {/* Prova de entrega: o que realmente esta gravado no banco */}
+        {(histAvisos.length > 0 || histEmp.length > 0) && (
+          <div style={{marginTop: 10, fontSize: '0.72rem', color: '#94a3b8'}}>
+            <div style={{fontWeight: 800, marginBottom: 4}}>📜 Últimos recados gravados no banco:</div>
+            {histAvisos.map(h => (
+              <div key={'g' + h.id} style={{marginBottom: 2}}>📣 TODOS: “{String(h.texto).slice(0, 60)}” <span style={{opacity: 0.6}}>· {h.timestamp ? new Date(h.timestamp).toLocaleString('pt-BR') : ''}</span></div>
+            ))}
+            {histEmp.map(h => (
+              <div key={'e' + h.id} style={{marginBottom: 2}}>🏢 ESTA EMPRESA: “{String(h.texto).slice(0, 60)}” <span style={{opacity: 0.6}}>· {h.timestamp ? new Date(h.timestamp).toLocaleString('pt-BR') : ''}</span></div>
+            ))}
           </div>
         )}
       </div>
