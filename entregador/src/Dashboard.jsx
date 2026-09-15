@@ -631,7 +631,7 @@ function TelaSaude({ permissoes, checkPerms, debugLog, onLimparLog, onClose }) {
   );
 }
 
-const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actionColor, onConfirmarDevolucao }) => {
+const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actionColor, onConfirmarDevolucao, secondaryLabel, onSecondary }) => {
   // Nome do estabelecimento: nunca mostra e-mail se houver nome real
   const candidatosNome = [entrega.empresaNome, empresas[entrega.empresaId]?.nome].filter(Boolean);
   const nomeEmpresa = candidatosNome.find(n => !n.includes('@')) || candidatosNome[0] || 'Estabelecimento';
@@ -711,6 +711,17 @@ const DeliveryCard = ({ entrega, posicao, empresas, onAction, actionLabel, actio
           </button>
         </div>
       ) : null}
+      {secondaryLabel ? (
+        <div className="delivery-footer" style={{paddingTop: 0}}>
+          <button
+            onClick={() => onSecondary(entrega)}
+            className="btn-full"
+            style={{ background: 'transparent', border: '1px solid #ef4444', color: '#f87171' }}
+          >
+            {secondaryLabel}
+          </button>
+        </div>
+      ) : null}
       {entrega.pedirDevolucao && !entrega.devolucaoConfirmadaEm && ['entregue'].includes(entrega.status) && (
         <div className="delivery-footer">
           {entrega.devolucaoSolicitadaEm ? (
@@ -752,14 +763,12 @@ const tocarChimeMensagem = () => {
   } catch { /* dispositivo sem audio */ }
 };
 
-// Voz estilo iFood: anuncia "Nova oferta! Conecta Entregas!" usando a voz PT-BR do celular.
-// No Android usa o Google TTS (voz natural, gratis, funciona offline com o pacote de voz instalado).
-const anunciarOfertaVoz = () => {
+// Voz estilo iFood: usa a voz PT-BR do celular (Google TTS no Android)
+const falarTexto = (texto) => {
   try {
     if (!('speechSynthesis' in window)) return;
     const synth = window.speechSynthesis;
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance('Nova oferta! Conecta Entregas!');
+    const u = new SpeechSynthesisUtterance(texto);
     u.lang = 'pt-BR';
     u.volume = 1.0;
     u.rate = 1.05;
@@ -769,7 +778,14 @@ const anunciarOfertaVoz = () => {
     const pt = vozes.find(v => (v.lang || '').toLowerCase().startsWith('pt'));
     if (pt) u.voice = pt;
     synth.speak(u);
-  } catch { /* TTS indisponivel: o chime continua tocando */ }
+  } catch { /* TTS indisponivel */ }
+};
+
+// Anuncia "Nova oferta! Conecta Entregas!" usando a voz PT-BR do celular.
+// No Android usa o Google TTS (voz natural, gratis, funciona offline com o pacote de voz instalado).
+const anunciarOfertaVoz = () => {
+  try { window.speechSynthesis.cancel(); } catch { /* sem TTS */ }
+  falarTexto('Nova oferta! Conecta Entregas!');
 };
 
 const pararVoz = () => {
@@ -828,6 +844,42 @@ export default function Dashboard({ user, versao }) {
   const [erroCodigo, setErroCodigo] = useState('');
   const [concluindo, setConcluindo] = useState(false);
   const rastreioAtivoRef = useRef(null); // entrega ativa: espelha GPS no rastreio publico
+
+  // ===== RECADOS DO MASTER (Direcao) — canal proprio, impossivel confundir com empresa =====
+  const [avisosDir, setAvisosDir] = useState({});
+  const [avisosGeral, setAvisosGeral] = useState({});
+  const [avisosLidos, setAvisosLidos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('avisos_master_lidos') || '[]'); } catch { return []; }
+  });
+  const avisosAnunciadosRef = useRef(new Set());
+  useEffect(() => {
+    const u1 = onValue(ref(db, `avisos/${user.uid}`), s => setAvisosDir(s.val() || {}), () => {});
+    const u2 = onValue(ref(db, 'avisos/geral'), s => setAvisosGeral(s.val() || {}), () => {});
+    return () => { u1(); u2(); };
+  }, [user.uid]);
+  const avisosVisiveis = useMemo(() => {
+    const todos = [
+      ...Object.entries(avisosDir).map(([id, v]) => ({ id: 'd' + id, ...v })),
+      ...Object.entries(avisosGeral).map(([id, v]) => ({ id: 'g' + id, ...v })),
+    ].filter(a => a.texto && !avisosLidos.includes(a.id));
+    return todos.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [avisosDir, avisosGeral, avisosLidos]);
+  // Le o recado em voz alta 1x ao chegar
+  useEffect(() => {
+    avisosVisiveis.forEach(a => {
+      if (!avisosAnunciadosRef.current.has(a.id)) {
+        avisosAnunciadosRef.current.add(a.id);
+        falarTexto(`Recado do Master: ${String(a.texto).slice(0, 200)}`);
+      }
+    });
+  }, [avisosVisiveis]);
+  const dispensarAviso = (id) => {
+    setAvisosLidos(prev => {
+      const next = [...prev, id].slice(-50);
+      try { localStorage.setItem('avisos_master_lidos', JSON.stringify(next)); } catch { /* sem storage */ }
+      return next;
+    });
+  };
 
   const addLog = (msg) => {
     setDebugLog(prev => [new Date().toLocaleTimeString() + ': ' + msg, ...prev.slice(0, 9)]);
@@ -1208,6 +1260,35 @@ export default function Dashboard({ user, versao }) {
     }
   };
 
+  // Desistencia ANTES de buscar o pedido: devolve a entrega para DISPONIVEIS.
+  // So vale com status 'aceite' (ainda nao pegou o pedido); depois de 'em_transito' NAO ha cancelamento.
+  const cancelarEntrega = async (ent) => {
+    if (!ent || ent.status !== 'aceite' || ent.entregadorId !== user.uid) return;
+    if (!window.confirm('❌ CANCELAR esta entrega?\n\nEla volta para DISPONÍVEIS para outro entregador pegar.\n\nSó dá para cancelar ANTES de pegar o pedido na coleta.')) return;
+    try {
+      const result = await runTransaction(ref(db, `entregas/${ent.id}`), (atual) => {
+        if (!atual) return; // removida pela empresa: aborta
+        if (atual.status !== 'aceite' || atual.entregadorId !== user.uid) return; // aborta: ja mudou de estado
+        return { ...atual, status: 'pendente', entregadorId: null, entregadorNome: null, aceiteAt: null };
+      });
+      if (!result.committed) { alert('Não foi possível cancelar — a entrega já mudou de estado.'); return; }
+      await update(ref(db, `rastreio/${ent.id}`), { status: 'pendente', entregadorId: null, entregadorNome: null }).catch(() => {});
+      rastreioAtivoRef.current = null;
+      // Apaga o chat desta entrega
+      try {
+        const snap = await get(query(ref(db, 'mensagens'), orderByChild('entregaId'), equalTo(ent.id)));
+        const updates = {};
+        snap.forEach(c => { updates[c.key] = null; });
+        if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
+      } catch { /* sem permissao */ }
+      setEntregaEmRota(null);
+      setRotaInfo(null);
+      addLog('Entrega cancelada e devolvida para disponíveis');
+    } catch (e) {
+      alert('Erro ao cancelar: ' + (e?.message || e));
+    }
+  };
+
   // ===== PERMISSOES: obrigatorio permitir a localizacao antes de ficar online =====
   const [permissoesOk, setPermissoesOk] = useState(false);
   const [msgPermissao, setMsgPermissao] = useState('');
@@ -1525,6 +1606,33 @@ export default function Dashboard({ user, versao }) {
       </nav>
 
       <main className="main-scroll">
+        {/* Recados do MASTER (Direcao) — roxo/ouro, impossivel confundir com mensagem de empresa */}
+        {avisosVisiveis.length > 0 && (
+          <div style={{background: 'linear-gradient(135deg, rgba(99,102,241,0.22), rgba(168,85,247,0.18))',
+                       border: '2px solid #8b5cf6', borderRadius: 14, padding: '12px 14px', marginBottom: 12,
+                       boxShadow: '0 4px 16px rgba(139,92,246,0.35)'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+              <span style={{fontSize: '1.3rem'}}>📢</span>
+              <div>
+                <div style={{fontWeight: 900, fontSize: '0.85rem', color: '#c4b5fd', letterSpacing: '0.04em'}}>RECADO DO MASTER</div>
+                <div style={{fontSize: '0.68rem', color: '#94a3b8'}}>Direção ConectaEntregas — não é mensagem de empresa</div>
+              </div>
+            </div>
+            {avisosVisiveis.map(a => (
+              <div key={a.id} style={{background: 'rgba(2,6,23,0.5)', borderRadius: 10, padding: '10px 12px', marginBottom: 8}}>
+                <p style={{fontSize: '0.88rem', lineHeight: 1.5, margin: '0 0 4px'}}>{a.texto}</p>
+                {a.timestamp && <small style={{color: '#64748b', fontSize: '0.65rem'}}>{new Date(a.timestamp).toLocaleString('pt-BR')}</small>}
+                <button
+                  onClick={() => dispensarAviso(a.id)}
+                  style={{display: 'block', width: '100%', marginTop: 8, background: '#8b5cf6', color: '#fff',
+                          border: 'none', borderRadius: 10, padding: '10px', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer'}}
+                >
+                  OK, ENTENDI
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {!isOnline && !tudoOkSaude && (
           <div className="aviso-permissao">
             <span>⚠️ <strong>Faltam {TOTAL_ESSENCIAIS - okEssenciais} permissõe(s) essenciais ({okEssenciais}/{TOTAL_ESSENCIAIS})</strong> — ative TODAS para ficar online e receber entregas.</span>
@@ -1630,6 +1738,8 @@ export default function Dashboard({ user, versao }) {
                 actionLabel={e.status === 'pendente' ? 'ACEITAR' : (e.status === 'aceite' ? 'VER ROTA' : (e.status === 'em_transito' ? 'VER ROTA' : null))}
                 actionColor={e.status === 'aceite' ? '#f59e0b' : (e.status === 'em_transito' ? 'var(--secondary)' : null)}
                 onConfirmarDevolucao={confirmarDevolucao}
+                secondaryLabel={e.status === 'aceite' && e.entregadorId === user.uid ? '❌ CANCELAR ENTREGA' : null}
+                onSecondary={cancelarEntrega}
               />
             ))
           )}
@@ -1785,6 +1895,15 @@ export default function Dashboard({ user, versao }) {
                     }}
                   >
                     ✅ PEGUEI O PEDIDO
+                  </button>
+                )}
+                {entregaAtual.status === 'aceite' && (
+                  <button
+                    className="btn-nav-action"
+                    style={{background: 'transparent', border: '1px solid #ef4444', color: '#f87171', flex: 1}}
+                    onClick={() => cancelarEntrega(entregaAtual)}
+                  >
+                    ❌ CANCELAR
                   </button>
                 )}
                 {entregaAtual.status === 'em_transito' && (

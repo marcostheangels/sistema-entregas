@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { ref, get, set, onValue, update, remove } from 'firebase/database';
+import { ref, get, set, push, onValue, update, remove } from 'firebase/database';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { auth, db } from './firebase';
@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.15';
+const APP_VERSAO_ENTREGADOR = '1.4.17';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -292,6 +292,23 @@ function PainelAprovacoes({ user }) {
       setVersaoMsg(v ? `✅ Mínima ${v} — apps antigos bloqueiam na próxima abertura.` : '✅ Bloqueio desativado.');
       setTimeout(() => setVersaoMsg(''), 4000);
     } catch (e) { setVersaoMsg('❌ ' + e.message); }
+  };
+
+  // ===== RECADO DO MASTER AOS ENTREGADORES (canal direto, chega como MASTER) =====
+  const [avisoDestino, setAvisoDestino] = useState('todos');
+  const [avisoTexto, setAvisoTexto] = useState('');
+  const [avisoMsg, setAvisoMsg] = useState('');
+  const enviarAviso = async () => {
+    const texto = avisoTexto.trim().slice(0, 500);
+    if (!texto) { setAvisoMsg('❌ Escreva a mensagem.'); return; }
+    try {
+      const payload = { texto, de: 'master', remetente: 'MASTER — Direção ConectaEntregas', timestamp: Date.now() };
+      if (avisoDestino === 'todos') await push(ref(db, 'avisos/geral'), payload);
+      else await push(ref(db, `avisos/${avisoDestino}`), payload);
+      setAvisoTexto('');
+      setAvisoMsg('✅ Recado enviado! Aparece no app como MASTER — Direção.');
+      setTimeout(() => setAvisoMsg(''), 4000);
+    } catch (e) { setAvisoMsg('❌ ' + e.message); }
   };
 
   const [backupMsg, setBackupMsg] = useState('');
@@ -666,6 +683,24 @@ function PainelAprovacoes({ user }) {
             <input type="text" placeholder="ex.: 1.1" value={versaoMinima} onChange={e => setVersaoMinima(e.target.value)} style={{width: 90, marginLeft: 6, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
           </label>
           <button className="admin-btn backup" onClick={salvarVersao}>SALVAR</button>
+        </div>
+      </div>
+
+      <div className="admin-backup">
+        <div className="admin-backup-info">
+          <strong>📢 Recado do MASTER aos entregadores</strong>
+          <span>Chega no app em destaque roxo como <strong>MASTER — Direção</strong> (impossível confundir com mensagem de empresa) e é lido em voz alta. Vale para o app v1.4.17+.</span>
+          {avisoMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{avisoMsg}</span>}
+        </div>
+        <div className="admin-backup-botoes" style={{alignItems: 'center', flexWrap: 'wrap', gap: 8}}>
+          <select value={avisoDestino} onChange={e => setAvisoDestino(e.target.value)} style={{background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc', maxWidth: 220}}>
+            <option value="todos">📣 TODOS os entregadores</option>
+            {Object.entries(entregadores).map(([uid, p]) => (
+              <option key={uid} value={uid}>🛵 {(p.nome && !p.nome.includes('@') ? p.nome : p.email) || uid}</option>
+            ))}
+          </select>
+          <input type="text" placeholder="Ex.: Reunião amanhã às 9h na base..." value={avisoTexto} onChange={e => setAvisoTexto(e.target.value)} maxLength={500} style={{flex: 1, minWidth: 200, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+          <button className="admin-btn backup" onClick={enviarAviso}>ENVIAR RECADO</button>
         </div>
       </div>
 

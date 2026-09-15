@@ -83,6 +83,18 @@
       "versaoMinima": { ".read": true },
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
     },
+    "avisos": {
+      ".read": "auth != null && root.child('admin').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
+      "geral": {
+        ".read": "auth != null",
+        "$id": { ".read": "auth != null" }
+      },
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$id": { ".read": "auth != null && auth.uid === $uid" }
+      }
+    },
     "mensagens": {
       ".read": "auth != null && (root.child('admin').child(auth.uid).val() === true || (query.orderByChild === 'empresaId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregadorId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregaId' && (root.child('entregas').child(query.equalTo).child('empresaId').val() === auth.uid || root.child('entregas').child(query.equalTo).child('entregadorId').val() === auth.uid)))",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
