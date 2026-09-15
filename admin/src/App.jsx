@@ -648,6 +648,55 @@ function PainelAprovacoes({ user }) {
     }
   };
 
+  // Apaga SOMENTE quem nao esta aprovado (pendentes + orfaos), mantendo 100% dos aprovados
+  const limparNaoAprovados = async () => {
+    setResetando('limpeza');
+    try {
+      const [snapAprov, snapEnt, snapEmp] = await Promise.all([
+        get(ref(db, 'aprovacoes')), get(ref(db, 'entregadores')), get(ref(db, 'empresas'))
+      ]);
+      const aprov = snapAprov.val() || {};
+      const ents = snapEnt.val() || {};
+      const emps = snapEmp.val() || {};
+      const ehAprovado = (uid) => aprov[uid]?.aprovado === true;
+      const alvos = [];
+      Object.keys(aprov).forEach(uid => {
+        if (!ehAprovado(uid)) alvos.push({ uid, nome: aprov[uid]?.nome || aprov[uid]?.email || uid, oque: 'solicitação' });
+      });
+      Object.keys(ents).forEach(uid => {
+        if (!ehAprovado(uid)) alvos.push({ uid, nome: ents[uid]?.nome || ents[uid]?.email || uid, oque: 'perfil entregador' });
+      });
+      Object.keys(emps).forEach(uid => {
+        if (!ehAprovado(uid)) alvos.push({ uid, nome: emps[uid]?.nome || emps[uid]?.email || uid, oque: 'perfil empresa' });
+      });
+      if (alvos.length === 0) {
+        window.alert('✅ Nada a limpar — todos os cadastros estão aprovados.');
+        return;
+      }
+      const lista = alvos.map(a => `• ${a.nome} (${a.oque})`).join('\n');
+      if (!window.confirm(`APAGAR ${alvos.length} CADASTRO(S) NÃO APROVADO(S)?\n\n${lista}\n\nSerão removidos: solicitações pendentes, perfis órfãos, posições, conversas e avisos deles.\n\nOs APROVADOS não serão tocados. Não dá para desfazer!`)) return;
+      if (!window.confirm('TEM CERTEZA? Última confirmação antes de apagar.')) return;
+      let n = 0;
+      const uids = [...new Set(alvos.map(a => a.uid))];
+      for (const uid of uids) {
+        const eraEnt = !!ents[uid], eraEmp = !!emps[uid];
+        await remove(ref(db, `aprovacoes/${uid}`)).catch(() => {});
+        if (eraEnt) await remove(ref(db, `entregadores/${uid}`)).catch(() => {});
+        if (eraEmp) await remove(ref(db, `empresas/${uid}`)).catch(() => {});
+        await remove(ref(db, `posicoes/${uid}`)).catch(() => {});
+        await remove(ref(db, `presenca/${uid}`)).catch(() => {});
+        await remove(ref(db, `conversas_master/${uid}`)).catch(() => {});
+        await remove(ref(db, `avisos/${uid}`)).catch(() => {});
+        n++;
+      }
+      window.alert(`🧹 Limpeza feita! ${n} cadastro(s) não aprovado(s) removido(s).\n\nAprovados mantidos: ${Object.keys(aprov).filter(ehAprovado).length}.`);
+    } catch (e) {
+      window.alert('Erro na limpeza: ' + e.message);
+    } finally {
+      setResetando('');
+    }
+  };
+
   return (
     <div className="admin-painel">
       <header className="admin-header">
@@ -1027,6 +1076,9 @@ function PainelAprovacoes({ user }) {
         <h4>⚠️ Zona de Manutenção</h4>
         <p>Apaga permanentemente os dados do grupo selecionado. Use com cuidado!</p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="admin-btn backup" disabled={resetando !== ''} onClick={limparNaoAprovados}>
+            {resetando === 'limpeza' ? 'LIMPANDO...' : '🧹 LIMPAR NÃO APROVADOS'}
+          </button>
           {grupo === 'entregadores' ? (
             <button className="admin-btn reset" disabled={resetando !== ''} onClick={resetarEntregadores}>
               {resetando === 'entregadores' ? 'RESETANDO...' : '🔄 RESETAR ENTREGADORES'}
