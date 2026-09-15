@@ -9,6 +9,8 @@ import { auth, db } from './firebase';
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
 const APP_VERSAO_ENTREGADOR = '1.4.21';
+// Carimbo do build (confira no rodape do painel para saber se esta na versao nova)
+const MASTER_BUILD = '2026-09-15 · 9f6d941';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -343,6 +345,7 @@ function PainelAprovacoes({ user }) {
   const [avisoEmpTexto, setAvisoEmpTexto] = useState('');
   const enviarAvisoEmpresa = async () => {
     const texto = avisoEmpTexto.trim().slice(0, 500);
+    console.log('[Master] enviar aviso empresa:', { destino: avisoDestino, destTipo, tamanho: texto.length });
     if (!texto) { setAvisoMsg('❌ Escreva a mensagem.'); return; }
     if (destTipo !== 'empresa') { setAvisoMsg('❌ Selecione uma 🏢 empresa no campo ao lado.'); return; }
     try {
@@ -930,7 +933,8 @@ function PainelAprovacoes({ user }) {
                   <option value="24h">⏳ 24 horas</option>
                   <option value="7d">⏳ 7 dias</option>
                   <option value="permanente">🔒 Permanente</option>
-                </select>
+          </select>
+          <span style={{fontSize: '0.65rem', color: '#475569'}}>Destino: {avisoDestino} ({destTipo})</span>
                 <button className="admin-btn excluir" onClick={() => confirmarBloqueio(s.id)}>CONFIRMAR</button>
                 <button className="admin-btn dados" onClick={() => setBloqAberto(null)}>VOLTAR</button>
               </div>
@@ -1102,6 +1106,9 @@ function PainelAprovacoes({ user }) {
           </div>
         </div>
       )}
+      <div style={{textAlign: 'center', fontSize: '0.65rem', color: '#475569', padding: '18px 0 8px'}}>
+        ConectaEntregas Master · build {MASTER_BUILD}
+      </div>
     </div>
   );
 }
