@@ -7,6 +7,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { backgroundLocation } from './plugins/BackgroundLocation';
 import AppSettings from './plugins/Settings';
+import { FaWhatsapp } from 'react-icons/fa';
 
 // WhatsApp da Direcao (recurso/apelo de bloqueio + contato)
 const MASTER_WHATS = '5538998558528';
@@ -2073,9 +2074,9 @@ export default function Dashboard({ user, versao }) {
               </p>
               <a href={`https://wa.me/${MASTER_WHATS}?text=${encodeURIComponent('Olá! Sou entregador e minha conta foi bloqueada. Preciso de ajuda.')}`}
                 target="_blank" rel="noreferrer"
-                style={{display: 'block', background: '#25D366', color: '#fff', borderRadius: 12, padding: '14px',
+                style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#25D366', color: '#fff', borderRadius: 12, padding: '14px',
                         fontWeight: 800, fontSize: '0.85rem', textDecoration: 'none', marginBottom: 10}}>
-                💬 FALAR COM A DIREÇÃO NO WHATSAPP
+                <FaWhatsapp size={20} /> FALAR COM A DIREÇÃO NO WHATSAPP
               </a>
               <button onClick={() => signOut(auth)}
                 style={{background: 'transparent', color: '#94a3b8', border: '1px solid #334155',

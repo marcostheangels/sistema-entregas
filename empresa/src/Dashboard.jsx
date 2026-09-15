@@ -3,6 +3,7 @@ import { ref, push, set, onValue, update, remove, get, query, orderByChild, equa
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { FaWhatsapp } from 'react-icons/fa';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -775,7 +776,7 @@ export default function Dashboard({ user }) {
         href={`https://wa.me/5538998558528?text=${encodeURIComponent(`Olá! Aqui é da empresa ${perfil?.nome || user.email}. Preciso de ajuda no ConectaEntregas.`)}`}
         target="_blank" rel="noreferrer" className="whats-fab" title="Falar com o ConectaEntregas no WhatsApp"
       >
-        💬
+        <FaWhatsapp size={30} color="#fff" />
       </a>
 
       <div className="stats-grid">
