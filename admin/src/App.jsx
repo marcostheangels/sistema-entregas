@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.18';
+const APP_VERSAO_ENTREGADOR = '1.4.20';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -294,7 +294,7 @@ function PainelAprovacoes({ user }) {
     } catch (e) { setVersaoMsg('❌ ' + e.message); }
   };
 
-  // ===== RECADO DO MASTER AOS ENTREGADORES (canal direto, chega como MASTER) =====
+  // ===== RECADO DO MASTER AOS ENTREGADORES (canal direto, chega como CONECTA ENTREGAS) =====
   const [avisoDestino, setAvisoDestino] = useState('todos');
   const [avisoTexto, setAvisoTexto] = useState('');
   const [avisoMsg, setAvisoMsg] = useState('');
@@ -303,12 +303,84 @@ function PainelAprovacoes({ user }) {
     if (!texto) { setAvisoMsg('❌ Escreva a mensagem.'); return; }
     try {
       const payload = { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() };
-      if (avisoDestino === 'todos') await push(ref(db, 'avisos/geral'), payload);
-      else await push(ref(db, `avisos/${avisoDestino}`), payload);
+      await push(ref(db, 'avisos/geral'), payload);
       setAvisoTexto('');
-      setAvisoMsg('✅ Recado enviado! Aparece no app como RECADO DO CONECTA ENTREGAS!');
+      setAvisoMsg('✅ Recado enviado para TODOS (apps + painéis)! Aparece como RECADO DO CONECTA ENTREGAS!');
       setTimeout(() => setAvisoMsg(''), 4000);
     } catch (e) { setAvisoMsg('❌ ' + e.message); }
+  };
+
+  // Aviso unico para UMA empresa especifica (banner no painel dela)
+  const [avisoEmpTexto, setAvisoEmpTexto] = useState('');
+  const enviarAvisoEmpresa = async () => {
+    const texto = avisoEmpTexto.trim().slice(0, 500);
+    if (!texto || destTipo !== 'empresa') return;
+    try {
+      await push(ref(db, `avisos/${avisoDestino}`), { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() });
+      setAvisoEmpTexto('');
+      setAvisoMsg('✅ Recado enviado para a empresa! Aparece no painel dela como RECADO DO CONECTA ENTREGAS!');
+      setTimeout(() => setAvisoMsg(''), 4000);
+    } catch (e) { setAvisoMsg('❌ ' + e.message); }
+  };
+
+  // ===== CONVERSA DIRETA COM UM ENTREGADOR (ele responde, voce pode encerrar) =====
+  const [threadMsgs, setThreadMsgs] = useState({});
+  const [threadFechada, setThreadFechada] = useState(null);
+  const [threadTexto, setThreadTexto] = useState('');
+  // Empresas aprovadas (para recado direto a uma empresa)
+  const empresasAprovadas = lista.filter(s => s.tipo === 'empresa' && s.aprovado);
+  const destTipo = avisoDestino === 'todos' ? 'todos' : (entregadores[avisoDestino] ? 'entregador' : 'empresa');
+  useEffect(() => {
+    if (destTipo !== 'entregador') { setThreadMsgs({}); setThreadFechada(null); return; }
+    const u1 = onValue(ref(db, `conversas_master/${avisoDestino}/msgs`), s => setThreadMsgs(s.val() || {}), () => {});
+    const u2 = onValue(ref(db, `conversas_master/${avisoDestino}/fechada`), s => setThreadFechada(s.val() ?? null), () => {});
+    return () => { u1(); u2(); };
+  }, [avisoDestino, destTipo]);
+  const threadLista = Object.entries(threadMsgs).map(([id, v]) => ({ id, ...v })).filter(m => m.texto).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  const enviarThread = async () => {
+    const texto = threadTexto.trim().slice(0, 500);
+    if (!texto || destTipo !== 'entregador') return;
+    try {
+      await push(ref(db, `conversas_master/${avisoDestino}/msgs`), { texto, de: 'master', timestamp: Date.now() });
+      setThreadTexto('');
+    } catch (e) { setAvisoMsg('❌ ' + e.message); }
+  };
+  const alternarFechada = async () => {
+    if (destTipo !== 'entregador') return;
+    try {
+      if (threadFechada) {
+        await remove(ref(db, `conversas_master/${avisoDestino}/fechada`));
+      } else {
+        if (!window.confirm('🔒 ENCERRAR a conversa?\n\nO entregador NÃO poderá mais responder.')) return;
+        await set(ref(db, `conversas_master/${avisoDestino}/fechada`), Date.now());
+      }
+    } catch (e) { setAvisoMsg('❌ ' + e.message); }
+  };
+
+  // ===== BLOQUEIO DE ENTREGADOR (temporario ou permanente, avisa que foi o Master) =====
+  const [bloqAberto, setBloqAberto] = useState(null);
+  const [bloqMotivo, setBloqMotivo] = useState('');
+  const [bloqDuracao, setBloqDuracao] = useState('permanente');
+  const BLOQ_DURACOES = { '1h': 3600e3, '24h': 86400e3, '7d': 7 * 86400e3, 'permanente': null };
+  const confirmarBloqueio = async (uid) => {
+    try {
+      const agora = Date.now();
+      const dur = BLOQ_DURACOES[bloqDuracao];
+      await update(ref(db, `entregadores/${uid}`), {
+        bloqueado: true,
+        bloqueioMotivo: bloqMotivo.trim().slice(0, 200) || 'Bloqueado pelo Master',
+        bloqueioAte: dur ? agora + dur : null,
+        bloqueadoPor: 'master',
+        bloqueadoEm: agora
+      });
+      setBloqAberto(null);
+      setBloqMotivo('');
+    } catch (e) { alert('❌ ' + e.message); }
+  };
+  const reativarEntregador = async (uid) => {
+    try {
+      await update(ref(db, `entregadores/${uid}`), { bloqueado: false, bloqueioMotivo: null, bloqueioAte: null, bloqueadoPor: null, bloqueadoEm: null });
+    } catch (e) { alert('❌ ' + e.message); }
   };
 
   const [backupMsg, setBackupMsg] = useState('');
@@ -688,20 +760,66 @@ function PainelAprovacoes({ user }) {
 
       <div className="admin-backup">
         <div className="admin-backup-info">
-          <strong>📢 Recado aos entregadores (CONECTA ENTREGAS)</strong>
-          <span>Chega no app como <strong>RECADO DO CONECTA ENTREGAS!</strong> (banner roxo + sininho + voz — impossível confundir com mensagem de empresa). Vale para o app v1.4.18+.</span>
+          <strong>📢 Recado (CONECTA ENTREGAS)</strong>
+          <span><strong>TODOS</strong> = aviso nos apps e painéis. <strong>🛵 entregador</strong> = conversa direta (ele responde, você pode encerrar). <strong>🏢 empresa</strong> = aviso no painel dela. Sempre como <strong>RECADO DO CONECTA ENTREGAS!</strong> Vale para o app v1.4.19+.</span>
           {avisoMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{avisoMsg}</span>}
         </div>
         <div className="admin-backup-botoes" style={{alignItems: 'center', flexWrap: 'wrap', gap: 8}}>
-          <select value={avisoDestino} onChange={e => setAvisoDestino(e.target.value)} style={{background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc', maxWidth: 220}}>
-            <option value="todos">📣 TODOS os entregadores</option>
-            {Object.entries(entregadores).map(([uid, p]) => (
-              <option key={uid} value={uid}>🛵 {(p.nome && !p.nome.includes('@') ? p.nome : p.email) || uid}</option>
-            ))}
+          <select value={avisoDestino} onChange={e => setAvisoDestino(e.target.value)} style={{background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc', maxWidth: 240}}>
+            <option value="todos">📣 TODOS (apps + painéis)</option>
+            <optgroup label="🛵 Entregadores (conversa)">
+              {Object.entries(entregadores).map(([uid, p]) => (
+                <option key={uid} value={uid}>🛵 {(p.nome && !p.nome.includes('@') ? p.nome : p.email) || uid}</option>
+              ))}
+            </optgroup>
+            <optgroup label="🏢 Empresas (aviso)">
+              {empresasAprovadas.map(s => (
+                <option key={s.id} value={s.id}>🏢 {(s.nome && !s.nome.includes('@') ? s.nome : s.email) || s.id}</option>
+              ))}
+            </optgroup>
           </select>
-          <input type="text" placeholder="Ex.: Reunião amanhã às 9h na base..." value={avisoTexto} onChange={e => setAvisoTexto(e.target.value)} maxLength={500} style={{flex: 1, minWidth: 200, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
-          <button className="admin-btn backup" onClick={enviarAviso}>ENVIAR RECADO</button>
+          {avisoDestino === 'todos' ? (
+            <>
+              <input type="text" placeholder="Ex.: Reunião amanhã às 9h na base..." value={avisoTexto} onChange={e => setAvisoTexto(e.target.value)} maxLength={500} style={{flex: 1, minWidth: 200, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+              <button className="admin-btn backup" onClick={enviarAviso}>ENVIAR RECADO</button>
+            </>
+          ) : destTipo === 'empresa' ? (
+            <>
+              <input type="text" placeholder="Aviso para esta empresa..." value={avisoEmpTexto} onChange={e => setAvisoEmpTexto(e.target.value)} maxLength={500}
+                onKeyDown={e => { if (e.key === 'Enter') enviarAvisoEmpresa(); }}
+                style={{flex: 1, minWidth: 200, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+              <button className="admin-btn backup" onClick={enviarAvisoEmpresa}>ENVIAR AVISO</button>
+            </>
+          ) : (
+            <button className="admin-btn" style={{background: threadFechada ? '#10b981' : '#ef4444', color: '#fff'}} onClick={alternarFechada}>
+              {threadFechada ? '🔓 REABRIR CONVERSA' : '🔒 ENCERRAR CONVERSA'}
+            </button>
+          )}
         </div>
+        {destTipo === 'entregador' && (
+          <div style={{marginTop: 10, background: 'rgba(2,6,23,0.5)', border: '1px solid #8b5cf6', borderRadius: 10, padding: 10}}>
+            {threadFechada && <div style={{fontSize: '0.72rem', color: '#f87171', fontWeight: 800, marginBottom: 8}}>🔒 CONVERSA ENCERRADA — o entregador não pode mais responder.</div>}
+            <div style={{maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8}}>
+              {threadLista.length === 0 && <div style={{fontSize: '0.75rem', color: '#64748b'}}>Nenhuma mensagem ainda. Escreva abaixo para abrir a conversa.</div>}
+              {threadLista.map(m => (
+                <div key={m.id} style={{alignSelf: m.de === 'master' ? 'flex-end' : 'flex-start', maxWidth: '85%',
+                                        background: m.de === 'master' ? '#8b5cf6' : '#1e293b', color: '#fff',
+                                        borderRadius: 10, padding: '7px 11px', fontSize: '0.8rem', lineHeight: 1.45}}>
+                  <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.75, marginBottom: 2}}>{m.de === 'master' ? 'VOCÊ (MASTER)' : 'ENTREGADOR'}</div>
+                  {m.texto}
+                  {m.timestamp && <div style={{fontSize: '0.6rem', opacity: 0.6, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
+                </div>
+              ))}
+            </div>
+            <div style={{display: 'flex', gap: 8}}>
+              <input type="text" placeholder={threadFechada ? 'Conversa encerrada — reabra para falar' : 'Responder ao entregador...'} value={threadTexto}
+                onChange={e => setThreadTexto(e.target.value)} maxLength={500} disabled={!!threadFechada}
+                onKeyDown={e => { if (e.key === 'Enter') enviarThread(); }}
+                style={{flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+              <button className="admin-btn backup" onClick={enviarThread} disabled={!!threadFechada}>ENVIAR</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="admin-backup">
@@ -729,7 +847,11 @@ function PainelAprovacoes({ user }) {
           <div key={s.id} className="admin-item">
             <div className="admin-item-badge">
               {s.aprovado ? <span className="badge-status aprovado">APROVADO</span> : <span className="badge-status pendente">AGUARDANDO</span>}
-              {grupo === 'entregadores' && entregadores[s.id]?.bloqueado && <span className="badge-status suspenso">SUSPENSO</span>}
+              {grupo === 'entregadores' && entregadores[s.id]?.bloqueado && (
+                <span className="badge-status suspenso" title={entregadores[s.id]?.bloqueioMotivo || 'Bloqueado pelo Master'}>
+                  {entregadores[s.id]?.bloqueioAte ? `⛔ ATÉ ${new Date(entregadores[s.id].bloqueioAte).toLocaleString('pt-BR')}` : '⛔ BLOQUEADO'}
+                </span>
+              )}
             </div>
             <div className="admin-item-info">
               <div className="admin-item-nome">{s.nome || 'Sem nome'}</div>
@@ -744,9 +866,9 @@ function PainelAprovacoes({ user }) {
                 <>
                   {grupo === 'entregadores' && (
                     entregadores[s.id]?.bloqueado ? (
-                      <button className="admin-btn aprovar" onClick={() => update(ref(db, `entregadores/${s.id}`), { bloqueado: false })}>REATIVAR</button>
+                      <button className="admin-btn aprovar" onClick={() => reativarEntregador(s.id)}>REATIVAR</button>
                     ) : (
-                      <button className="admin-btn revogar" onClick={() => { if (window.confirm(`Suspender ${s.nome || s.email}? Ele ficará offline e sem receber pedidos.`)) update(ref(db, `entregadores/${s.id}`), { bloqueado: true }); }}>SUSPENDER</button>
+                      <button className="admin-btn revogar" onClick={() => setBloqAberto(bloqAberto === s.id ? null : s.id)}>BLOQUEAR</button>
                     )
                   )}
                   <button className="admin-btn revogar" onClick={() => revogar(s.id)}>REVOGAR</button>
@@ -754,6 +876,26 @@ function PainelAprovacoes({ user }) {
               )}
               <button className="admin-btn excluir" onClick={() => excluir(s.id)}>EXCLUIR</button>
             </div>
+            {grupo === 'entregadores' && bloqAberto === s.id && !entregadores[s.id]?.bloqueado && (
+              <div style={{flexBasis: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)',
+                           borderRadius: 10, padding: 10, marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center'}}>
+                <span style={{fontSize: '0.72rem', fontWeight: 800, color: '#f87171', width: '100%'}}>
+                  ⛔ BLOQUEAR {(s.nome || s.email || '').toUpperCase()} — ele verá que foi o MASTER que bloqueou
+                </span>
+                <input type="text" placeholder="Motivo (o entregador vai ler)" value={bloqMotivo}
+                  onChange={e => setBloqMotivo(e.target.value)} maxLength={200}
+                  style={{flex: 1, minWidth: 180, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+                <select value={bloqDuracao} onChange={e => setBloqDuracao(e.target.value)}
+                  style={{background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}}>
+                  <option value="1h">⏳ 1 hora</option>
+                  <option value="24h">⏳ 24 horas</option>
+                  <option value="7d">⏳ 7 dias</option>
+                  <option value="permanente">🔒 Permanente</option>
+                </select>
+                <button className="admin-btn excluir" onClick={() => confirmarBloqueio(s.id)}>CONFIRMAR</button>
+                <button className="admin-btn dados" onClick={() => setBloqAberto(null)}>VOLTAR</button>
+              </div>
+            )}
           </div>
         ))}
       </div>

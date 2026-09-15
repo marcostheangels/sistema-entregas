@@ -549,6 +549,32 @@ export default function Dashboard({ user }) {
   const [statusFiltro, setStatusFiltro] = useState('pendente');
   const [salvando, setSalvando] = useState(false);
 
+  // ===== RECADOS DO CONECTA ENTREGAS (Direcao) — banner roxo, impossivel confundir =====
+  const [avisosDir, setAvisosDir] = useState({});
+  const [avisosGeral, setAvisosGeral] = useState({});
+  const [avisosLidos, setAvisosLidos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('avisos_conecta_emp_lidos') || '[]'); } catch { return []; }
+  });
+  useEffect(() => {
+    const u1 = onValue(ref(db, `avisos/${user.uid}`), s => setAvisosDir(s.val() || {}), () => {});
+    const u2 = onValue(ref(db, 'avisos/geral'), s => setAvisosGeral(s.val() || {}), () => {});
+    return () => { u1(); u2(); };
+  }, [user.uid]);
+  const avisosVisiveis = useMemo(() => {
+    const todos = [
+      ...Object.entries(avisosDir).map(([id, v]) => ({ id: 'd' + id, ...v })),
+      ...Object.entries(avisosGeral).map(([id, v]) => ({ id: 'g' + id, ...v })),
+    ].filter(a => a.texto && !avisosLidos.includes(a.id));
+    return todos.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [avisosDir, avisosGeral, avisosLidos]);
+  const dispensarAviso = (id) => {
+    setAvisosLidos(prev => {
+      const next = [...prev, id].slice(-50);
+      try { localStorage.setItem('avisos_conecta_emp_lidos', JSON.stringify(next)); } catch { /* sem storage */ }
+      return next;
+    });
+  };
+
   useEffect(() => {
     const unsubPerfil = onValue(ref(db, `empresas/${user.uid}`), snap => setPerfil(snap.val()));
     // Query indexada: só as entregas desta empresa (evita baixar o banco inteiro)
@@ -705,6 +731,40 @@ export default function Dashboard({ user }) {
       </header>
 
       <ChatFlutuante empresaId={user.uid} empresaNome={perfil?.nome || user.email} entregas={entregas} entregadores={entregadores} posicoes={posicoes} />
+
+      {/* Recados do CONECTA ENTREGAS (Direcao) */}
+      {avisosVisiveis.length > 0 && (
+        <div style={{background: 'linear-gradient(135deg, rgba(99,102,241,0.22), rgba(168,85,247,0.18))',
+                     border: '2px solid #8b5cf6', borderRadius: 14, padding: '12px 14px', margin: '0 0 12px',
+                     boxShadow: '0 4px 16px rgba(139,92,246,0.35)'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+            <span style={{fontSize: '1.3rem'}}>📢</span>
+            <div>
+              <div style={{fontWeight: 900, fontSize: '0.85rem', color: '#c4b5fd', letterSpacing: '0.04em'}}>RECADO DO CONECTA ENTREGAS!</div>
+              <div style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>Direção ConectaEntregas</div>
+            </div>
+          </div>
+          {avisosVisiveis.map(a => (
+            <div key={a.id} style={{background: 'rgba(2,6,23,0.5)', borderRadius: 10, padding: '10px 12px', marginBottom: 8}}>
+              <p style={{fontSize: '0.88rem', lineHeight: 1.5, margin: '0 0 4px'}}>{a.texto}</p>
+              {a.timestamp && <small style={{color: 'var(--text-muted)', fontSize: '0.65rem'}}>{new Date(a.timestamp).toLocaleString('pt-BR')}</small>}
+              <button onClick={() => dispensarAviso(a.id)}
+                style={{display: 'block', width: '100%', marginTop: 8, background: '#8b5cf6', color: '#fff',
+                        border: 'none', borderRadius: 10, padding: '9px', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer'}}>
+                OK, ENTENDI
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* WhatsApp direto com a Direcao do ConectaEntregas */}
+      <a
+        href={`https://wa.me/5538998558528?text=${encodeURIComponent(`Olá! Aqui é da empresa ${perfil?.nome || user.email}. Preciso de ajuda no ConectaEntregas.`)}`}
+        target="_blank" rel="noreferrer" className="whats-fab" title="Falar com o ConectaEntregas no WhatsApp"
+      >
+        💬
+      </a>
 
       <div className="stats-grid">
         <div className={`stat-card clickable ${statusFiltro === 'pendente' ? 'active' : ''}`} onClick={() => setStatusFiltro('pendente')}>

@@ -8,6 +8,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { backgroundLocation } from './plugins/BackgroundLocation';
 import AppSettings from './plugins/Settings';
 
+// WhatsApp da Direcao (recurso/apelo de bloqueio + contato)
+const MASTER_WHATS = '5538998558528';
+
 // -- ICONS (SVG) --
 const IconLogout = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
@@ -819,6 +822,9 @@ export default function Dashboard({ user, versao }) {
   const [rotaInfo, setRotaInfo] = useState(null);
   const [isOnline, setIsOnline] = useState(false);
   const [isBlockedGlobal, setIsBlockedGlobal] = useState(false);
+  const [bloqueioMotivo, setBloqueioMotivo] = useState('');
+  const [bloqueioAte, setBloqueioAte] = useState(null);
+  const [agora, setAgora] = useState(Date.now());
   const [empresasBloqueadas, setEmpresasBloqueadas] = useState({});
   const [listaEmpresas, setListaEmpresas] = useState({}); // NOVO: Para saber os nomes das empresas
   const [permissoes, setPermissoes] = useState({
@@ -891,6 +897,48 @@ export default function Dashboard({ user, versao }) {
     });
   };
 
+  // ===== CONVERSA COM O CONECTA ENTREGAS (voce responde, o Master pode encerrar) =====
+  const [threadMsgs, setThreadMsgs] = useState({});
+  const [threadFechada, setThreadFechada] = useState(null);
+  const [resposta, setResposta] = useState('');
+  const [enviandoResp, setEnviandoResp] = useState(false);
+  const [threadOcultaEm, setThreadOcultaEm] = useState(() => {
+    try { return Number(localStorage.getItem('thread_conecta_oculta') || 0); } catch { return 0; }
+  });
+  useEffect(() => {
+    const u1 = onValue(ref(db, `conversas_master/${user.uid}/msgs`), s => setThreadMsgs(s.val() || {}), () => {});
+    const u2 = onValue(ref(db, `conversas_master/${user.uid}/fechada`), s => setThreadFechada(s.val() ?? null), () => {});
+    return () => { u1(); u2(); };
+  }, [user.uid]);
+  const threadLista = useMemo(() => Object.entries(threadMsgs)
+    .map(([id, v]) => ({ id, ...v })).filter(m => m.texto)
+    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)), [threadMsgs]);
+  // Voz para mensagens do Conecta Entregas 1x ao chegar
+  useEffect(() => {
+    threadLista.forEach(m => {
+      const key = 't' + m.id;
+      if (m.de === 'master' && !avisosAnunciadosRef.current.has(key)) {
+        avisosAnunciadosRef.current.add(key);
+        try { avisoSomRef.current?.play().catch(() => {}); } catch { /* sem audio */ }
+        setTimeout(() => falarTexto(`Mensagem do Conecta Entregas: ${String(m.texto).slice(0, 200)}`), 1100);
+      }
+    });
+  }, [threadLista]);
+  const enviarResposta = async () => {
+    const t = resposta.trim().slice(0, 500);
+    if (!t || enviandoResp) return;
+    setEnviandoResp(true);
+    try {
+      await push(ref(db, `conversas_master/${user.uid}/msgs`), { texto: t, de: 'entregador', timestamp: Date.now() });
+      setResposta('');
+    } catch {
+      alert('❌ Não consegui enviar — a conversa pode ter sido encerrada pelo Master.');
+    } finally {
+      setEnviandoResp(false);
+    }
+  };
+  const mostrarThread = threadLista.length > 0 && (!threadFechada || threadOcultaEm !== threadFechada);
+
   const addLog = (msg) => {
     setDebugLog(prev => [new Date().toLocaleTimeString() + ': ' + msg, ...prev.slice(0, 9)]);
   };
@@ -942,19 +990,33 @@ export default function Dashboard({ user, versao }) {
       const empBlocked = info.empresasBloqueadas || {};
 
       setIsBlockedGlobal(isBlocked);
+      setBloqueioMotivo(info.bloqueioMotivo || '');
+      setBloqueioAte(info.bloqueioAte || null);
       setEmpresasBloqueadas(empBlocked);
 
-      blockedGlobalRef.current = isBlocked;
+      const ativoAgora = isBlocked && (!info.bloqueioAte || Date.now() < info.bloqueioAte);
+      blockedGlobalRef.current = ativoAgora;
       empresasBloqueadasRef.current = empBlocked;
 
       // Se for bloqueado globalmente, força ficar offline
-      if (isBlocked && onlineRef.current) {
+      if (ativoAgora && onlineRef.current) {
         toggleTracking(false);
-        addLog('⚠️ SUA CONTA FOI SUSPENSA DO SISTEMA');
+        addLog('⚠️ SUA CONTA FOI BLOQUEADA PELO MASTER');
       }
     });
     return () => { unsubEmpresas(); unsub(); };
   }, [user.uid]);
+
+  // Relogio para liberar sozinho o bloqueio temporario ao expirar
+  useEffect(() => {
+    if (!isBlockedGlobal) return;
+    const t = setInterval(() => {
+      setAgora(Date.now());
+      blockedGlobalRef.current = !bloqueioAte || Date.now() < bloqueioAte;
+    }, 30000);
+    return () => clearInterval(t);
+  }, [isBlockedGlobal, bloqueioAte]);
+  const bloqueioAtivo = isBlockedGlobal && (!bloqueioAte || agora < bloqueioAte);
 
   // Mensagens da empresa (recebidas em tempo real)
   useEffect(() => {
@@ -1647,7 +1709,57 @@ export default function Dashboard({ user, versao }) {
           <div className="aviso-permissao">
             <span>⚠️ <strong>Faltam {TOTAL_ESSENCIAIS - okEssenciais} permissõe(s) essenciais ({okEssenciais}/{TOTAL_ESSENCIAIS})</strong> — ative TODAS para ficar online e receber entregas.</span>
             <button onClick={() => setSaudeAberta(true)}>ATIVAR AGORA</button>
-            {msgPermissao && <small>{msgPermissao}</small>}
+          </div>
+        )}
+        {/* Conversa direta com o CONECTA ENTREGAS (privada: so voce e a Direcao) */}
+        {mostrarThread && (
+          <div style={{background: 'linear-gradient(135deg, rgba(99,102,241,0.22), rgba(168,85,247,0.18))',
+                       border: '2px solid #8b5cf6', borderRadius: 14, padding: '12px 14px', marginBottom: 12,
+                       boxShadow: '0 4px 16px rgba(139,92,246,0.35)'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+              <span style={{fontSize: '1.3rem'}}>💬</span>
+              <div>
+                <div style={{fontWeight: 900, fontSize: '0.85rem', color: '#c4b5fd', letterSpacing: '0.04em'}}>CONVERSA COM O CONECTA ENTREGAS!</div>
+                <div style={{fontSize: '0.68rem', color: '#94a3b8'}}>Direção — privada, não é mensagem de empresa</div>
+              </div>
+            </div>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, maxHeight: 260, overflowY: 'auto'}}>
+              {threadLista.map(m => (
+                <div key={m.id} style={{alignSelf: m.de === 'master' ? 'flex-start' : 'flex-end', maxWidth: '88%',
+                                        background: m.de === 'master' ? 'rgba(139,92,246,0.35)' : 'rgba(16,185,129,0.25)',
+                                        border: m.de === 'master' ? '1px solid #8b5cf6' : '1px solid rgba(16,185,129,0.5)',
+                                        borderRadius: 10, padding: '8px 11px', fontSize: '0.85rem', lineHeight: 1.45}}>
+                  <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.7, marginBottom: 2}}>
+                    {m.de === 'master' ? 'CONECTA ENTREGAS' : 'VOCÊ'}
+                  </div>
+                  {m.texto}
+                  {m.timestamp && <div style={{fontSize: '0.6rem', opacity: 0.6, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
+                </div>
+              ))}
+            </div>
+            {threadFechada ? (
+              <div style={{background: 'rgba(2,6,23,0.5)', borderRadius: 10, padding: '10px 12px', textAlign: 'center'}}>
+                <div style={{fontSize: '0.78rem', fontWeight: 800, color: '#f87171', marginBottom: 8}}>🔒 Conversa encerrada pelo Conecta Entregas — você não pode mais responder.</div>
+                <button
+                  onClick={() => { try { localStorage.setItem('thread_conecta_oculta', String(threadFechada)); } catch { /* sem storage */ } setThreadOcultaEm(threadFechada); }}
+                  style={{background: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: 10, padding: '9px 18px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer'}}
+                >
+                  OCULTAR
+                </button>
+              </div>
+            ) : (
+              <div style={{display: 'flex', gap: 8}}>
+                <input value={resposta} onChange={e => setResposta(e.target.value)} maxLength={500}
+                  onKeyDown={e => { if (e.key === 'Enter') enviarResposta(); }}
+                  placeholder="Responder ao Conecta Entregas..."
+                  style={{flex: 1, background: 'rgba(2,6,23,0.6)', border: '1px solid #8b5cf6', borderRadius: 10, padding: '10px 12px', color: '#f8fafc', fontSize: '0.85rem'}} />
+                <button onClick={enviarResposta} disabled={enviandoResp || !resposta.trim()}
+                  style={{background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: 10, padding: '0 18px', fontWeight: 800, fontSize: '1rem', cursor: 'pointer', opacity: (enviandoResp || !resposta.trim()) ? 0.5 : 1}}
+                >
+                  ➤
+                </button>
+              </div>
+            )}
           </div>
         )}
         <div className="stats-row">
@@ -1932,6 +2044,44 @@ export default function Dashboard({ user, versao }) {
                 </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conta bloqueada pelo MASTER: trava o app com a mensagem e o motivo */}
+      {bloqueioAtivo && (
+        <div className="route-overlay" style={{background: 'rgba(2, 6, 23, 0.98)', zIndex: 3000}}>
+          <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto'}}>
+            <div style={{maxWidth: 400, width: '100%', textAlign: 'center', background: '#1e293b',
+                         border: '2px solid #ef4444', borderRadius: 16, padding: '28px 22px'}}>
+              <div style={{fontSize: '3rem', marginBottom: 10}}>⛔</div>
+              <h2 style={{color: '#f87171', fontSize: '1.2rem', fontWeight: 900, margin: '0 0 6px'}}>CONTA BLOQUEADA</h2>
+              <p style={{fontSize: '0.8rem', color: '#c4b5fd', fontWeight: 800, marginBottom: 14}}>
+                Bloqueado pelo CONECTA ENTREGAS (Master)
+              </p>
+              {bloqueioMotivo && (
+                <p style={{fontSize: '0.85rem', lineHeight: 1.5, background: 'rgba(2,6,23,0.5)',
+                           borderRadius: 10, padding: '10px 12px', marginBottom: 10}}>
+                  Motivo: <strong>{bloqueioMotivo}</strong>
+                </p>
+              )}
+              <p style={{fontSize: '0.78rem', color: '#94a3b8', marginBottom: 18}}>
+                {bloqueioAte
+                  ? <>⏳ Bloqueio temporário — libera em <strong>{new Date(bloqueioAte).toLocaleString('pt-BR')}</strong>.</>
+                  : '🔒 Bloqueio permanente — fale com a direção para regularizar.'}
+              </p>
+              <a href={`https://wa.me/${MASTER_WHATS}?text=${encodeURIComponent('Olá! Sou entregador e minha conta foi bloqueada. Preciso de ajuda.')}`}
+                target="_blank" rel="noreferrer"
+                style={{display: 'block', background: '#25D366', color: '#fff', borderRadius: 12, padding: '14px',
+                        fontWeight: 800, fontSize: '0.85rem', textDecoration: 'none', marginBottom: 10}}>
+                💬 FALAR COM A DIREÇÃO NO WHATSAPP
+              </a>
+              <button onClick={() => signOut(auth)}
+                style={{background: 'transparent', color: '#94a3b8', border: '1px solid #334155',
+                        borderRadius: 10, padding: '10px 18px', fontWeight: 700, cursor: 'pointer', width: '100%'}}>
+                SAIR DA CONTA
+              </button>
             </div>
           </div>
         </div>
