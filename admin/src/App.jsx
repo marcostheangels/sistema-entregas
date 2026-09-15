@@ -800,9 +800,11 @@ function PainelAprovacoes({ user }) {
           <select value={avisoDestino} onChange={e => setAvisoDestino(e.target.value)} style={{background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc', maxWidth: 240}}>
             <option value="todos">📣 TODOS (apps + painéis)</option>
             <optgroup label="🛵 Entregadores (conversa)">
-              {Object.entries(entregadores).map(([uid, p]) => (
-                <option key={uid} value={`entregador:${uid}`}>🛵 {(p.nome && !p.nome.includes('@') ? p.nome : p.email) || uid}</option>
-              ))}
+              {lista.filter(s => s.tipo === 'entregador' && s.aprovado).map(s => {
+                const p = entregadores[s.id] || {};
+                const nome = (p.nome && !p.nome.includes('@') ? p.nome : null) || (s.nome && !s.nome.includes('@') ? s.nome : null) || s.email || s.id;
+                return <option key={s.id} value={`entregador:${s.id}`}>🛵 {nome}</option>;
+              })}
             </optgroup>
             <optgroup label="🏢 Empresas (aviso)">
               {empresasAprovadas.map(s => (
