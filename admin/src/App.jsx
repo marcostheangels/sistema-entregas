@@ -343,7 +343,8 @@ function PainelAprovacoes({ user }) {
   const [avisoEmpTexto, setAvisoEmpTexto] = useState('');
   const enviarAvisoEmpresa = async () => {
     const texto = avisoEmpTexto.trim().slice(0, 500);
-    if (!texto || destTipo !== 'empresa') return;
+    if (!texto) { setAvisoMsg('❌ Escreva a mensagem.'); return; }
+    if (destTipo !== 'empresa') { setAvisoMsg('❌ Selecione uma 🏢 empresa no campo ao lado.'); return; }
     try {
       await confirmarPush(`avisos/${avisoDestino}`, { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() });
       setAvisoEmpTexto('');
