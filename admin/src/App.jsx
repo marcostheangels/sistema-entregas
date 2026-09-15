@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.17';
+const APP_VERSAO_ENTREGADOR = '1.4.18';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -302,11 +302,11 @@ function PainelAprovacoes({ user }) {
     const texto = avisoTexto.trim().slice(0, 500);
     if (!texto) { setAvisoMsg('❌ Escreva a mensagem.'); return; }
     try {
-      const payload = { texto, de: 'master', remetente: 'MASTER — Direção ConectaEntregas', timestamp: Date.now() };
+      const payload = { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() };
       if (avisoDestino === 'todos') await push(ref(db, 'avisos/geral'), payload);
       else await push(ref(db, `avisos/${avisoDestino}`), payload);
       setAvisoTexto('');
-      setAvisoMsg('✅ Recado enviado! Aparece no app como MASTER — Direção.');
+      setAvisoMsg('✅ Recado enviado! Aparece no app como RECADO DO CONECTA ENTREGAS!');
       setTimeout(() => setAvisoMsg(''), 4000);
     } catch (e) { setAvisoMsg('❌ ' + e.message); }
   };
@@ -688,8 +688,8 @@ function PainelAprovacoes({ user }) {
 
       <div className="admin-backup">
         <div className="admin-backup-info">
-          <strong>📢 Recado do MASTER aos entregadores</strong>
-          <span>Chega no app em destaque roxo como <strong>MASTER — Direção</strong> (impossível confundir com mensagem de empresa) e é lido em voz alta. Vale para o app v1.4.17+.</span>
+          <strong>📢 Recado aos entregadores (CONECTA ENTREGAS)</strong>
+          <span>Chega no app como <strong>RECADO DO CONECTA ENTREGAS!</strong> (banner roxo + sininho + voz — impossível confundir com mensagem de empresa). Vale para o app v1.4.18+.</span>
           {avisoMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{avisoMsg}</span>}
         </div>
         <div className="admin-backup-botoes" style={{alignItems: 'center', flexWrap: 'wrap', gap: 8}}>

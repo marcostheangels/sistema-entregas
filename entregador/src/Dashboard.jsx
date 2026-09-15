@@ -805,6 +805,15 @@ export default function Dashboard({ user, versao }) {
     a.preload = 'auto';
     audioRef.current = a;
   }
+  // Sininho exclusivo do recado do Conecta Entregas (diferente da sirene de oferta)
+  const avisoSomRef = useRef(null);
+  if (!avisoSomRef.current) {
+    const s = new Audio(`${import.meta.env.BASE_URL}aviso-master.wav`);
+    s.loop = false;
+    s.volume = 1.0;
+    s.preload = 'auto';
+    avisoSomRef.current = s;
+  }
   const [posicao, setPosicao] = useState(null);
   const [entregaEmRota, setEntregaEmRota] = useState(null);
   const [rotaInfo, setRotaInfo] = useState(null);
@@ -864,12 +873,13 @@ export default function Dashboard({ user, versao }) {
     ].filter(a => a.texto && !avisosLidos.includes(a.id));
     return todos.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [avisosDir, avisosGeral, avisosLidos]);
-  // Le o recado em voz alta 1x ao chegar
+  // Le o recado em voz alta 1x ao chegar (com sininho proprio antes)
   useEffect(() => {
     avisosVisiveis.forEach(a => {
       if (!avisosAnunciadosRef.current.has(a.id)) {
         avisosAnunciadosRef.current.add(a.id);
-        falarTexto(`Recado do Master: ${String(a.texto).slice(0, 200)}`);
+        try { avisoSomRef.current?.play().catch(() => {}); } catch { /* sem audio */ }
+        setTimeout(() => falarTexto(`Recado do Conecta Entregas: ${String(a.texto).slice(0, 200)}`), 1100);
       }
     });
   }, [avisosVisiveis]);
@@ -1614,7 +1624,7 @@ export default function Dashboard({ user, versao }) {
             <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
               <span style={{fontSize: '1.3rem'}}>📢</span>
               <div>
-                <div style={{fontWeight: 900, fontSize: '0.85rem', color: '#c4b5fd', letterSpacing: '0.04em'}}>RECADO DO MASTER</div>
+                <div style={{fontWeight: 900, fontSize: '0.85rem', color: '#c4b5fd', letterSpacing: '0.04em'}}>RECADO DO CONECTA ENTREGAS!</div>
                 <div style={{fontSize: '0.68rem', color: '#94a3b8'}}>Direção ConectaEntregas — não é mensagem de empresa</div>
               </div>
             </div>
@@ -1791,6 +1801,12 @@ export default function Dashboard({ user, versao }) {
                 <p style={{fontSize: '0.78rem', opacity: 0.75, marginBottom: '12px'}}>
                   Depois de devolver, toque no botão abaixo. A EMPRESA vai conferir e confirmar — só então você é liberado.
                 </p>
+                {telaDevolucao.origemCoords?.lat != null && telaDevolucao.origemCoords?.lng != null && (
+                  <div className="nav-shortcuts" style={{marginBottom: 8}}>
+                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${telaDevolucao.origemCoords.lat},${telaDevolucao.origemCoords.lng}`} target="_blank" className="btn-nav-action gmaps">🗺️ ROTA GOOGLE MAPS</a>
+                    <a href={`waze://?ll=${telaDevolucao.origemCoords.lat},${telaDevolucao.origemCoords.lng}&navigate=yes`} className="btn-nav-action waze">ROTA WAZE</a>
+                  </div>
+                )}
                 <div className="modal-botoes">
                   <button className="ok" style={{background: '#f59e0b', width: '100%'}} onClick={finalizarAposDevolucao}>
                     🔄 JÁ DEVOLVI NA EMPRESA — AVISAR
