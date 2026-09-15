@@ -235,7 +235,7 @@
       if (mapa) { try { mapa.remove(); } catch { /* ja removido */ } mapa = null; }
       marcadorEntregador = null;
       marcadorDestino = null;
-      mapa = L.map('map', { zoomControl: false }).setView([-16.73, -43.86], 13);
+      mapa = L.map('map', { zoomControl: false }).setView([-14.2350, -51.9253], 4); // Brasil todo
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
       observarMapa();
       setTimeout(() => { try { mapa.invalidateSize(); } catch { /* mapa removido */ } }, 50);

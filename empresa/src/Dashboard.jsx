@@ -27,11 +27,12 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
   }, []);
 
   // Autocomplete estilo Google: Photon (rapido, gratis) com fallback para Nominatim
+  // Cobertura: Brasil todo (sem restricao de cidade)
   const buscarEndereco = async (q) => {
     if (q.length < 3) { setSugestoes([]); return; }
-    const bbox = '-44.2,-17.2,-43.5,-16.3'; // regiao de Montes Claros/MG
+    const bboxBrasil = '-74,-34,-34,6'; // Brasil todo (lonMin,latMin,lonMax,latMax)
     try {
-      const res = await fetch(`https://photon.komoot.io/api?q=${encodeURIComponent(q)}&bbox=${bbox}&limit=6&lang=pt`);
+      const res = await fetch(`https://photon.komoot.io/api?q=${encodeURIComponent(q)}&bbox=${bboxBrasil}&limit=6&lang=pt`);
       const data = await res.json();
       const lista = (data.features || []).map(f => ({
         coords: { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] },
@@ -41,7 +42,7 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
     } catch { /* cai no fallback */ }
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)},+Montes+Claros,+MG,+Brasil&format=json&limit=5&addressdetails=1`
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&countrycodes=br&format=json&limit=5&addressdetails=1`
       );
       const data = await res.json();
       setSugestoes(data.map(s => ({
@@ -51,7 +52,7 @@ function GeoSearch({ value, onChange, onCoords, placeholder, label }) {
           rua: s.address?.road || s.display_name.split(',')[0],
           numero: s.address?.house_number || '',
           bairro: s.address?.neighbourhood || s.address?.suburb || '',
-          cidade: s.address?.city_district || s.address?.city || 'Montes Claros',
+          cidade: s.address?.city || s.address?.town || s.address?.village || s.address?.municipality || s.address?.county || '',
           cep: s.address?.postcode || ''
         }
       })));
@@ -460,7 +461,7 @@ const haversineKmEmp = (a, b) => {
 
 const MapaFrota = memo(({ entregadores, posicoes, currentUserId, empresaNome, entregas, onBlockToggle }) => {
   const mapRef = useRef(null);
-  const centerMoc = [-16.7251, -43.8647];
+  const centroBrasil = [-14.2350, -51.9253]; // Brasil todo (vista inicial nacional)
   const [, setTick] = useState(0);
   const [rota, setRota] = useState(null); // { chave, coords }
   const ultimaRotaPos = useRef(null);
@@ -529,9 +530,9 @@ const MapaFrota = memo(({ entregadores, posicoes, currentUserId, empresaNome, en
     <div className="card" style={{padding: '0', overflow: 'hidden'}}>
       <div style={{padding: '1rem 1.5rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
         <h2 style={{margin:0, fontSize:'1rem'}}>🌍 Rastreamento em Tempo Real</h2>
-        <button onClick={() => mapRef.current?.setView(centerMoc, 13)} style={{background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem'}}>RE-CENTRALIZAR</button>
+        <button onClick={() => mapRef.current?.setView(centroBrasil, 4)} style={{background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem'}}>RE-CENTRALIZAR</button>
       </div>
-      <MapContainer center={centerMoc} zoom={13} style={{ height: '400px', width: '100%' }} ref={mapRef} scrollWheelZoom={true} dragging={true}>
+      <MapContainer center={centroBrasil} zoom={4} style={{ height: '400px', width: '100%' }} ref={mapRef} scrollWheelZoom={true} dragging={true}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         {/* Rota da entrega em andamento + pontos de coleta e destino */}
         {entregaRota?.origemCoords && <Marker position={[entregaRota.origemCoords.lat, entregaRota.origemCoords.lng]} icon={iconeColetaEmp}><Popup autoPan={false}><div style={{fontWeight: 700}}>🏢 Coleta: {entregaRota.origemEndereco || entregaRota.origem || 'Ponto de coleta'}</div></Popup></Marker>}

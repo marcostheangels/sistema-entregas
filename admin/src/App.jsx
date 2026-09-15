@@ -108,7 +108,7 @@ function MapaTempoReal({ posicoes, entregas, entregadores, rastreio }) {
     if (mapRef.current || !divRef.current) return;
     const map = L.map(divRef.current, { attributionControl: false });
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-    map.setView([-16.735, -43.862], 12);
+    map.setView([-14.2350, -51.9253], 4); // Brasil todo (vista inicial nacional)
     mapRef.current = map;
     return () => {
       map.remove();
