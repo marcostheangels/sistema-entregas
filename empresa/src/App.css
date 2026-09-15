@@ -546,6 +546,15 @@ header {
 
 .whats-fab:hover { transform: scale(1.08); filter: brightness(1.15); }
 
+/* Pulsar de atencao no botao de WhatsApp */
+.whats-fab { animation: whatsPulse 1.8s ease-out infinite; }
+
+@keyframes whatsPulse {
+  0% { box-shadow: 0 10px 26px -6px rgba(37, 211, 102, 0.6), 0 0 0 0 rgba(37, 211, 102, 0.55); }
+  70% { box-shadow: 0 10px 26px -6px rgba(37, 211, 102, 0.6), 0 0 0 18px rgba(37, 211, 102, 0); }
+  100% { box-shadow: 0 10px 26px -6px rgba(37, 211, 102, 0.6), 0 0 0 0 rgba(37, 211, 102, 0); }
+}
+
 .chat-badge {
   position: absolute;
   top: -4px;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { ref, get, set, push, onValue, update, remove } from 'firebase/database';
+import { ref, get, set, push, onValue, update, remove, query, limitToLast } from 'firebase/database';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { auth, db } from './firebase';
@@ -166,8 +166,20 @@ function MapaTempoReal({ posicoes, entregas, entregadores, rastreio }) {
                   </small>
                 ) : (
                   <small className="rel-status livre">🟢 Livre — aguardando pedido</small>
-                )}
-              </div>
+        )}
+        {/* Prova de entrega: o que realmente esta gravado no banco */}
+        {(histAvisos.length > 0 || histEmp.length > 0) && (
+          <div style={{marginTop: 10, fontSize: '0.72rem', color: '#94a3b8'}}>
+            <div style={{fontWeight: 800, marginBottom: 4}}>📜 Últimos recados gravados no banco:</div>
+            {histAvisos.map(h => (
+              <div key={'g' + h.id} style={{marginBottom: 2}}>📣 TODOS: “{String(h.texto).slice(0, 60)}” <span style={{opacity: 0.6}}>· {h.timestamp ? new Date(h.timestamp).toLocaleString('pt-BR') : ''}</span></div>
+            ))}
+            {histEmp.map(h => (
+              <div key={'e' + h.id} style={{marginBottom: 2}}>🏢 ESTA EMPRESA: “{String(h.texto).slice(0, 60)}” <span style={{opacity: 0.6}}>· {h.timestamp ? new Date(h.timestamp).toLocaleString('pt-BR') : ''}</span></div>
+            ))}
+          </div>
+        )}
+      </div>
             </div>
           ))}
         </div>
@@ -298,17 +310,46 @@ function PainelAprovacoes({ user }) {
   const [avisoDestino, setAvisoDestino] = useState('todos');
   const [avisoTexto, setAvisoTexto] = useState('');
   const [avisoMsg, setAvisoMsg] = useState('');
+  // Empresas aprovadas (para recado direto a uma empresa) + tipo do destino atual
+  const empresasAprovadas = lista.filter(s => s.tipo === 'empresa' && s.aprovado);
+  const destTipo = avisoDestino === 'todos' ? 'todos' : (entregadores[avisoDestino] ? 'entregador' : 'empresa');
+  // Grava e CONFIRMA a leitura de volta: se o banco negar (regras desatualizadas), aparece o erro na hora
+  const confirmarPush = async (caminho, payload) => {
+    const r = await push(ref(db, caminho), payload);
+    const c = await get(r);
+    if (!c.exists()) throw new Error('Banco não confirmou a gravação — publique as regras (firebase-rules.json) no Console.');
+    return r;
+  };
   const enviarAviso = async () => {
     const texto = avisoTexto.trim().slice(0, 500);
     if (!texto) { setAvisoMsg('❌ Escreva a mensagem.'); return; }
     try {
       const payload = { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() };
-      await push(ref(db, 'avisos/geral'), payload);
+      await confirmarPush('avisos/geral', payload);
       setAvisoTexto('');
-      setAvisoMsg('✅ Recado enviado para TODOS (apps + painéis)! Aparece como RECADO DO CONECTA ENTREGAS!');
+      setAvisoMsg('✅ Recado entregue no banco! Aparece como RECADO DO CONECTA ENTREGAS!');
       setTimeout(() => setAvisoMsg(''), 4000);
-    } catch (e) { setAvisoMsg('❌ ' + e.message); }
+    } catch (e) { setAvisoMsg('❌ ' + (e?.message || e)); }
   };
+
+  // Historico: ultimos recados gerais + ultimos para a empresa selecionada (prova de entrega)
+  const [histAvisos, setHistAvisos] = useState([]);
+  const [histEmp, setHistEmp] = useState([]);
+  useEffect(() => {
+    const u = onValue(query(ref(db, 'avisos/geral'), limitToLast(5)), s => {
+      const l = []; s.forEach(c => l.push({ id: c.key, ...c.val() }));
+      setHistAvisos(l.reverse());
+    }, () => {});
+    return u;
+  }, []);
+  useEffect(() => {
+    if (destTipo !== 'empresa') { setHistEmp([]); return; }
+    const u = onValue(query(ref(db, `avisos/${avisoDestino}`), limitToLast(3)), s => {
+      const l = []; s.forEach(c => l.push({ id: c.key, ...c.val() }));
+      setHistEmp(l.reverse());
+    }, () => {});
+    return u;
+  }, [avisoDestino, destTipo]);
 
   // Aviso unico para UMA empresa especifica (banner no painel dela)
   const [avisoEmpTexto, setAvisoEmpTexto] = useState('');
@@ -316,20 +357,17 @@ function PainelAprovacoes({ user }) {
     const texto = avisoEmpTexto.trim().slice(0, 500);
     if (!texto || destTipo !== 'empresa') return;
     try {
-      await push(ref(db, `avisos/${avisoDestino}`), { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() });
+      await confirmarPush(`avisos/${avisoDestino}`, { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() });
       setAvisoEmpTexto('');
-      setAvisoMsg('✅ Recado enviado para a empresa! Aparece no painel dela como RECADO DO CONECTA ENTREGAS!');
+      setAvisoMsg('✅ Recado entregue no banco! Aparece no painel da empresa como RECADO DO CONECTA ENTREGAS!');
       setTimeout(() => setAvisoMsg(''), 4000);
-    } catch (e) { setAvisoMsg('❌ ' + e.message); }
+    } catch (e) { setAvisoMsg('❌ ' + (e?.message || e)); }
   };
 
   // ===== CONVERSA DIRETA COM UM ENTREGADOR (ele responde, voce pode encerrar) =====
   const [threadMsgs, setThreadMsgs] = useState({});
   const [threadFechada, setThreadFechada] = useState(null);
   const [threadTexto, setThreadTexto] = useState('');
-  // Empresas aprovadas (para recado direto a uma empresa)
-  const empresasAprovadas = lista.filter(s => s.tipo === 'empresa' && s.aprovado);
-  const destTipo = avisoDestino === 'todos' ? 'todos' : (entregadores[avisoDestino] ? 'entregador' : 'empresa');
   useEffect(() => {
     if (destTipo !== 'entregador') { setThreadMsgs({}); setThreadFechada(null); return; }
     const u1 = onValue(ref(db, `conversas_master/${avisoDestino}/msgs`), s => setThreadMsgs(s.val() || {}), () => {});
@@ -341,9 +379,9 @@ function PainelAprovacoes({ user }) {
     const texto = threadTexto.trim().slice(0, 500);
     if (!texto || destTipo !== 'entregador') return;
     try {
-      await push(ref(db, `conversas_master/${avisoDestino}/msgs`), { texto, de: 'master', timestamp: Date.now() });
+      await confirmarPush(`conversas_master/${avisoDestino}/msgs`, { texto, de: 'master', timestamp: Date.now() });
       setThreadTexto('');
-    } catch (e) { setAvisoMsg('❌ ' + e.message); }
+    } catch (e) { setAvisoMsg('❌ ' + (e?.message || e)); }
   };
   const alternarFechada = async () => {
     if (destTipo !== 'entregador') return;

@@ -555,9 +555,14 @@ export default function Dashboard({ user }) {
   const [avisosLidos, setAvisosLidos] = useState(() => {
     try { return JSON.parse(localStorage.getItem('avisos_conecta_emp_lidos') || '[]'); } catch { return []; }
   });
+  const [erroAvisos, setErroAvisos] = useState({ direto: '', geral: '' });
   useEffect(() => {
-    const u1 = onValue(ref(db, `avisos/${user.uid}`), s => setAvisosDir(s.val() || {}), () => {});
-    const u2 = onValue(ref(db, 'avisos/geral'), s => setAvisosGeral(s.val() || {}), () => {});
+    const u1 = onValue(ref(db, `avisos/${user.uid}`),
+      s => { setErroAvisos(p => ({ ...p, direto: '' })); setAvisosDir(s.val() || {}); },
+      (e) => { console.error('[Avisos empresa] direto:', e?.message || e); setErroAvisos(p => ({ ...p, direto: String(e?.message || e) })); });
+    const u2 = onValue(ref(db, 'avisos/geral'),
+      s => { setErroAvisos(p => ({ ...p, geral: '' })); setAvisosGeral(s.val() || {}); },
+      (e) => { console.error('[Avisos empresa] geral:', e?.message || e); setErroAvisos(p => ({ ...p, geral: String(e?.message || e) })); });
     return () => { u1(); u2(); };
   }, [user.uid]);
   const avisosVisiveis = useMemo(() => {
@@ -733,6 +738,13 @@ export default function Dashboard({ user }) {
       <ChatFlutuante empresaId={user.uid} empresaNome={perfil?.nome || user.email} entregas={entregas} entregadores={entregadores} posicoes={posicoes} />
 
       {/* Recados do CONECTA ENTREGAS (Direcao) */}
+      {(erroAvisos.direto || erroAvisos.geral) && (
+        <div style={{background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10,
+                     padding: '8px 12px', margin: '0 0 12px', fontSize: '0.72rem', color: '#f87171', fontWeight: 700}}>
+          ⚠️ Sem conexão com os recados da direção ({[erroAvisos.direto && 'direto', erroAvisos.geral && 'geral'].filter(Boolean).join(' + ')}).
+          Abra o console (F12) para ver o erro.
+        </div>
+      )}
       {avisosVisiveis.length > 0 && (
         <div style={{background: 'linear-gradient(135deg, rgba(99,102,241,0.22), rgba(168,85,247,0.18))',
                      border: '2px solid #8b5cf6', borderRadius: 14, padding: '12px 14px', margin: '0 0 12px',
