@@ -769,9 +769,13 @@ export default function Dashboard({ user }) {
                       </span>
                       {e.devolucaoSolicitadaEm && (
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             if (window.confirm(`✅ CONFIRMAR que ${e.entregadorNome || 'o entregador'} devolveu ${e.pagamento === 'cartao' ? 'a MAQUININHA' : 'o DINHEIRO'} (R$ ${e.valor})?\n\nConfirme só depois de conferir na mão!`)) {
-                              update(ref(db, `entregas/${e.id}`), { devolucaoConfirmadaEm: Date.now() });
+                              try {
+                                await update(ref(db, `entregas/${e.id}`), { devolucaoConfirmadaEm: Date.now() });
+                              } catch (err) {
+                                alert('❌ Não consegui liberar o entregador: ' + (err?.message || err) + '\n\nVerifique sua internet e se as regras do banco estão publicadas.');
+                              }
                             }
                           }}
                           style={{background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px', fontWeight: 900, fontSize: '0.8rem', cursor: 'pointer', width: '100%'}}
@@ -812,9 +816,13 @@ export default function Dashboard({ user }) {
                         }}>🔗 LINK DE RASTREIO</button>
                       {!e.pedirDevolucao && !e.devolucaoConfirmadaEm && (
                         <button className="btn-cancel" style={{color: '#f59e0b', borderColor: 'rgba(245,158,11,0.5)'}}
-                          onClick={() => {
+                          onClick={async () => {
                             if (window.confirm('🔄 Pedir devolução nesta entrega?\n\nO entregador verá o aviso para voltar na empresa devolver maquininha, dinheiro etc.')) {
-                              update(ref(db, `entregas/${e.id}`), { pedirDevolucao: true, pedirDevolucaoEm: Date.now() });
+                              try {
+                                await update(ref(db, `entregas/${e.id}`), { pedirDevolucao: true, pedirDevolucaoEm: Date.now() });
+                              } catch (err) {
+                                alert('❌ Não consegui pedir a devolução: ' + (err?.message || err));
+                              }
                             }
                           }}>🔄 PEDIR DEVOLUÇÃO</button>
                       )}

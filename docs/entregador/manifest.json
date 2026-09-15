@@ -2,7 +2,7 @@
   "name": "ConectaEntregas Entregador",
   "short_name": "Entregador",
   "description": "App para entregadores de mercadorias",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",

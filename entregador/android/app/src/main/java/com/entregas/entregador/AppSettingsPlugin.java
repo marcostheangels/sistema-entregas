@@ -132,9 +132,15 @@ public class AppSettingsPlugin extends Plugin {
         try {
             android.app.Activity activity = getActivity();
             if (activity != null) {
-                ActivityCompat.requestPermissions(activity,
-                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION},
-                        9101);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ActivityCompat.requestPermissions(activity,
+                            new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                            9101);
+                } else {
+                    ActivityCompat.requestPermissions(activity,
+                            new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION},
+                            9101);
+                }
                 call.resolve();
                 return;
             }

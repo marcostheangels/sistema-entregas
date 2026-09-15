@@ -573,6 +573,8 @@ const GRUPOS_SAUDE = [
 // Permissoes essenciais para ficar online (sem sobreposicao/acessibilidade, que sao recomendadas)
 const PERMISSOES_ESSENCIAIS = ['localizacao', 'localizacaoSempre', 'notificacao', 'bateria'];
 const TOTAL_ESSENCIAIS = PERMISSOES_ESSENCIAIS.length;
+// Total de itens da Saude do Sistema (todas as categorias)
+const TOTAL_SAUDE = GRUPOS_SAUDE.reduce((n, g) => n + g.itens.length, 0);
 
 // Tela dedicada de Saude do Sistema (fullscreen, organizada em secoes)
 function TelaSaude({ permissoes, checkPerms, debugLog, onLimparLog, onClose }) {
@@ -750,11 +752,43 @@ const tocarChimeMensagem = () => {
   } catch { /* dispositivo sem audio */ }
 };
 
+// Voz estilo iFood: anuncia "Nova oferta! Conecta Entregas!" usando a voz PT-BR do celular.
+// No Android usa o Google TTS (voz natural, gratis, funciona offline com o pacote de voz instalado).
+const anunciarOfertaVoz = () => {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance('Nova oferta! Conecta Entregas!');
+    u.lang = 'pt-BR';
+    u.volume = 1.0;
+    u.rate = 1.05;
+    u.pitch = 1.1;
+    // Prefere voz em portugues instalada no aparelho
+    const vozes = synth.getVoices ? synth.getVoices() : [];
+    const pt = vozes.find(v => (v.lang || '').toLowerCase().startsWith('pt'));
+    if (pt) u.voice = pt;
+    synth.speak(u);
+  } catch { /* TTS indisponivel: o chime continua tocando */ }
+};
+
+const pararVoz = () => {
+  try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch { /* sem TTS */ }
+};
+
 export default function Dashboard({ user, versao }) {
   const [entregas, setEntregas] = useState([]);
   const [statusFiltro, setStatusFiltro] = useState('disponivel');
   const entregasVistasRef = useRef(new Set());
-  const audioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3'));
+  // Alerta de nova oferta: som personalizado estilo iFood/99 (arquivo local, alto, funciona offline)
+  const audioRef = useRef(null);
+  if (!audioRef.current) {
+    const a = new Audio(`${import.meta.env.BASE_URL}alerta-oferta.wav`);
+    a.loop = true;
+    a.volume = 1.0;
+    a.preload = 'auto';
+    audioRef.current = a;
+  }
   const [posicao, setPosicao] = useState(null);
   const [entregaEmRota, setEntregaEmRota] = useState(null);
   const [rotaInfo, setRotaInfo] = useState(null);
@@ -786,6 +820,14 @@ export default function Dashboard({ user, versao }) {
   const lastMsgTs = useRef(Date.now());
   const workerRef = useRef(null);
   const wakeLockRef = useRef(null);
+
+  // ===== COMPROVANTE DE ENTREGA / DEVOLUCAO (declarado no topo: usado por useEffects acima) =====
+  const [modalCodigo, setModalCodigo] = useState(null);
+  const [telaDevolucao, setTelaDevolucao] = useState(null);
+  const [codigoDigitado, setCodigoDigitado] = useState('');
+  const [erroCodigo, setErroCodigo] = useState('');
+  const [concluindo, setConcluindo] = useState(false);
+  const rastreioAtivoRef = useRef(null); // entrega ativa: espelha GPS no rastreio publico
 
   const addLog = (msg) => {
     setDebugLog(prev => [new Date().toLocaleTimeString() + ': ' + msg, ...prev.slice(0, 9)]);
@@ -875,6 +917,13 @@ export default function Dashboard({ user, versao }) {
 
   useEffect(() => {
     checkPerms();
+    // Pre-carrega as vozes PT-BR para o anuncio "Conecta Entregas" sair na hora
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+        window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+      }
+    } catch { /* sem TTS */ }
     const intv = setInterval(checkPerms, 5000);
     return () => clearInterval(intv);
   }, []);
@@ -922,6 +971,7 @@ export default function Dashboard({ user, versao }) {
         audioRef.current.loop = true;
         audioRef.current.play().catch(e => addLog('Erro áudio: ' + e.message));
       }
+      anunciarOfertaVoz();
       novasEntregas.forEach(id => entregasVistasRef.current.add(id));
     }
 
@@ -929,6 +979,7 @@ export default function Dashboard({ user, versao }) {
     if (pendentesVisiveis.length === 0 && audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
+      pararVoz();
     }
   };
 
@@ -1086,13 +1137,7 @@ export default function Dashboard({ user, versao }) {
   }, []);
 
   // ===== COMPROVANTE DE ENTREGA: codigo de verificacao (sem foto) =====
-  const [modalCodigo, setModalCodigo] = useState(null);
-  const [telaDevolucao, setTelaDevolucao] = useState(null);
-  const [codigoDigitado, setCodigoDigitado] = useState('');
-  const [erroCodigo, setErroCodigo] = useState('');
-  const [concluindo, setConcluindo] = useState(false);
-  const rastreioAtivoRef = useRef(null); // entrega ativa: espelha GPS no rastreio publico
-
+  // (states modalCodigo/telaDevolucao declarados no topo do componente)
   const iniciarConclusao = (ent) => {
     setCodigoDigitado('');
     setErroCodigo('');
@@ -1228,13 +1273,20 @@ export default function Dashboard({ user, versao }) {
     }
     setIsOnline(status);
     onlineRef.current = status;
-    // Tenta "desbloquear" o áudio no primeiro clique do usuário
+    // Tenta "desbloquear" o áudio e a voz no primeiro clique do usuário
     if (audioRef.current) {
       audioRef.current.play().then(() => {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
       }).catch(() => {});
     }
+    try {
+      // Aquece as vozes PT-BR (o Chrome carrega a lista de forma assincrona)
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+        window.speechSynthesis.resume();
+      }
+    } catch { /* sem TTS */ }
 
     if (status) {
       addLog('Ficando Online...');
@@ -1268,6 +1320,7 @@ export default function Dashboard({ user, versao }) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
       }
+      pararVoz();
       entregasVistasRef.current = new Set();
       backgroundLocation.stopService().catch(() => {});
       stopKeepalive();
