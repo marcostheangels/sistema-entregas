@@ -305,6 +305,9 @@ function PainelAprovacoes({ user }) {
   // Tipo + uid extraidos do valor da selecao (formato "tipo:uid") — sem adivinhar por mapa
   const destTipo = avisoDestino === 'todos' ? 'todos' : avisoDestino.split(':')[0];
   const destUid = avisoDestino === 'todos' ? null : avisoDestino.slice(avisoDestino.indexOf(':') + 1);
+  // No da conversa: entregador usa conversas_master, empresa usa conversas_master_emp
+  const threadNo = destTipo === 'empresa' ? 'conversas_master_emp' : 'conversas_master';
+  const ehThread = destTipo === 'entregador' || destTipo === 'empresa';
   // Grava e CONFIRMA a leitura de volta: se o banco negar (regras desatualizadas), aparece o erro na hora
   const confirmarPush = async (caminho, payload) => {
     const r = await push(ref(db, caminho), payload);
@@ -363,28 +366,28 @@ function PainelAprovacoes({ user }) {
   const [threadFechada, setThreadFechada] = useState(null);
   const [threadTexto, setThreadTexto] = useState('');
   useEffect(() => {
-    if (destTipo !== 'entregador' || !destUid) { setThreadMsgs({}); setThreadFechada(null); return; }
-    const u1 = onValue(ref(db, `conversas_master/${destUid}/msgs`), s => setThreadMsgs(s.val() || {}), () => {});
-    const u2 = onValue(ref(db, `conversas_master/${destUid}/fechada`), s => setThreadFechada(s.val() ?? null), () => {});
+    if (!ehThread || !destUid) { setThreadMsgs({}); setThreadFechada(null); return; }
+    const u1 = onValue(ref(db, `${threadNo}/${destUid}/msgs`), s => setThreadMsgs(s.val() || {}), () => {});
+    const u2 = onValue(ref(db, `${threadNo}/${destUid}/fechada`), s => setThreadFechada(s.val() ?? null), () => {});
     return () => { u1(); u2(); };
   }, [destUid, destTipo]);
   const threadLista = Object.entries(threadMsgs).map(([id, v]) => ({ id, ...v })).filter(m => m.texto).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   const enviarThread = async () => {
     const texto = threadTexto.trim().slice(0, 500);
-    if (!texto || destTipo !== 'entregador' || !destUid) return;
+    if (!texto || !ehThread || !destUid) return;
     try {
-      await confirmarPush(`conversas_master/${destUid}/msgs`, { texto, de: 'master', timestamp: Date.now() });
+      await confirmarPush(`${threadNo}/${destUid}/msgs`, { texto, de: 'master', timestamp: Date.now() });
       setThreadTexto('');
     } catch (e) { setAvisoMsg('❌ ' + (e?.message || e)); }
   };
   const alternarFechada = async () => {
-    if (destTipo !== 'entregador' || !destUid) return;
+    if (!ehThread || !destUid) return;
     try {
       if (threadFechada) {
-        await remove(ref(db, `conversas_master/${destUid}/fechada`));
+        await remove(ref(db, `${threadNo}/${destUid}/fechada`));
       } else {
         if (!window.confirm('🔒 ENCERRAR a conversa?\n\nO entregador NÃO poderá mais responder.')) return;
-        await set(ref(db, `conversas_master/${destUid}/fechada`), Date.now());
+        await set(ref(db, `${threadNo}/${destUid}/fechada`), Date.now());
       }
     } catch (e) { setAvisoMsg('❌ ' + e.message); }
   };
@@ -686,6 +689,7 @@ function PainelAprovacoes({ user }) {
         await remove(ref(db, `posicoes/${uid}`)).catch(() => {});
         await remove(ref(db, `presenca/${uid}`)).catch(() => {});
         await remove(ref(db, `conversas_master/${uid}`)).catch(() => {});
+        await remove(ref(db, `conversas_master_emp/${uid}`)).catch(() => {});
         await remove(ref(db, `avisos/${uid}`)).catch(() => {});
         n++;
       }
@@ -842,7 +846,7 @@ function PainelAprovacoes({ user }) {
       <div className="admin-backup">
         <div className="admin-backup-info">
           <strong>📢 Recado (CONECTA ENTREGAS)</strong>
-          <span><strong>TODOS</strong> = aviso nos apps e painéis. <strong>🛵 entregador</strong> = conversa direta (ele responde, você pode encerrar). <strong>🏢 empresa</strong> = aviso no painel dela. Sempre como <strong>RECADO DO CONECTA ENTREGAS!</strong> Vale para o app v1.4.19+.</span>
+          <span><strong>TODOS</strong> = aviso nos apps e painéis. <strong>🛵 entregador</strong> = conversa direta. <strong>🏢 empresa</strong> = aviso único + conversa direta (ela responde, você encerra). Sempre como <strong>RECADO DO CONECTA ENTREGAS!</strong></span>
           {avisoMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{avisoMsg}</span>}
         </div>
         <div className="admin-backup-botoes" style={{alignItems: 'center', flexWrap: 'wrap', gap: 8}}>
@@ -872,6 +876,9 @@ function PainelAprovacoes({ user }) {
                 onKeyDown={e => { if (e.key === 'Enter') enviarAvisoEmpresa(); }}
                 style={{flex: 1, minWidth: 200, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
               <button className="admin-btn backup" onClick={enviarAvisoEmpresa}>ENVIAR AVISO</button>
+              <button className="admin-btn" style={{background: threadFechada ? '#10b981' : '#ef4444', color: '#fff'}} onClick={alternarFechada}>
+                {threadFechada ? '🔓 REABRIR' : '🔒 ENCERRAR'}
+              </button>
             </>
           ) : (
             <button className="admin-btn" style={{background: threadFechada ? '#10b981' : '#ef4444', color: '#fff'}} onClick={alternarFechada}>
@@ -879,23 +886,26 @@ function PainelAprovacoes({ user }) {
             </button>
           )}
         </div>
-        {destTipo === 'entregador' && (
+        {(destTipo === 'entregador' || destTipo === 'empresa') && (
           <div style={{marginTop: 10, background: 'rgba(2,6,23,0.5)', border: '1px solid #8b5cf6', borderRadius: 10, padding: 10}}>
-            {threadFechada && <div style={{fontSize: '0.72rem', color: '#f87171', fontWeight: 800, marginBottom: 8}}>🔒 CONVERSA ENCERRADA — o entregador não pode mais responder.</div>}
+            <div style={{fontSize: '0.72rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8}}>
+              💬 CONVERSA COM {destTipo === 'empresa' ? 'A EMPRESA' : 'O ENTREGADOR'} (ele responde aqui)
+            </div>
+            {threadFechada && <div style={{fontSize: '0.72rem', color: '#f87171', fontWeight: 800, marginBottom: 8}}>🔒 CONVERSA ENCERRADA — não pode mais responder.</div>}
             <div style={{maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8}}>
               {threadLista.length === 0 && <div style={{fontSize: '0.75rem', color: '#64748b'}}>Nenhuma mensagem ainda. Escreva abaixo para abrir a conversa.</div>}
               {threadLista.map(m => (
                 <div key={m.id} style={{alignSelf: m.de === 'master' ? 'flex-end' : 'flex-start', maxWidth: '85%',
                                         background: m.de === 'master' ? '#8b5cf6' : '#1e293b', color: '#fff',
                                         borderRadius: 10, padding: '7px 11px', fontSize: '0.8rem', lineHeight: 1.45}}>
-                  <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.75, marginBottom: 2}}>{m.de === 'master' ? 'VOCÊ (MASTER)' : 'ENTREGADOR'}</div>
+                  <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.75, marginBottom: 2}}>{m.de === 'master' ? 'VOCÊ (MASTER)' : (destTipo === 'empresa' ? 'EMPRESA' : 'ENTREGADOR')}</div>
                   {m.texto}
                   {m.timestamp && <div style={{fontSize: '0.6rem', opacity: 0.6, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
                 </div>
               ))}
             </div>
             <div style={{display: 'flex', gap: 8}}>
-              <input type="text" placeholder={threadFechada ? 'Conversa encerrada — reabra para falar' : 'Responder ao entregador...'} value={threadTexto}
+              <input type="text" placeholder={threadFechada ? 'Conversa encerrada — reabra para falar' : (destTipo === 'empresa' ? 'Responder à empresa...' : 'Responder ao entregador...')} value={threadTexto}
                 onChange={e => setThreadTexto(e.target.value)} maxLength={500} disabled={!!threadFechada}
                 onKeyDown={e => { if (e.key === 'Enter') enviarThread(); }}
                 style={{flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />

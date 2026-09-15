@@ -581,6 +581,37 @@ export default function Dashboard({ user }) {
     });
   };
 
+  // ===== CONVERSA COM O CONECTA ENTREGAS (voce responde, o Master pode encerrar) =====
+  const [threadMsgs, setThreadMsgs] = useState({});
+  const [threadFechada, setThreadFechada] = useState(null);
+  const [resposta, setResposta] = useState('');
+  const [enviandoResp, setEnviandoResp] = useState(false);
+  const [threadOcultaEm, setThreadOcultaEm] = useState(() => {
+    try { return Number(localStorage.getItem('thread_conecta_emp_oculta') || 0); } catch { return 0; }
+  });
+  useEffect(() => {
+    const u1 = onValue(ref(db, `conversas_master_emp/${user.uid}/msgs`), s => setThreadMsgs(s.val() || {}), (e) => { console.error('[Thread empresa]:', e?.message || e); });
+    const u2 = onValue(ref(db, `conversas_master_emp/${user.uid}/fechada`), s => setThreadFechada(s.val() ?? null), () => {});
+    return () => { u1(); u2(); };
+  }, [user.uid]);
+  const threadLista = useMemo(() => Object.entries(threadMsgs)
+    .map(([id, v]) => ({ id, ...v })).filter(m => m.texto)
+    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)), [threadMsgs]);
+  const enviarResposta = async () => {
+    const t = resposta.trim().slice(0, 500);
+    if (!t || enviandoResp) return;
+    setEnviandoResp(true);
+    try {
+      await push(ref(db, `conversas_master_emp/${user.uid}/msgs`), { texto: t, de: 'empresa', timestamp: Date.now() });
+      setResposta('');
+    } catch {
+      alert('❌ Não consegui enviar — a conversa pode ter sido encerrada pelo Master.');
+    } finally {
+      setEnviandoResp(false);
+    }
+  };
+  const mostrarThread = threadLista.length > 0 && (!threadFechada || threadOcultaEm !== threadFechada);
+
   useEffect(() => {
     const unsubPerfil = onValue(ref(db, `empresas/${user.uid}`), snap => setPerfil(snap.val()));
     // Query indexada: só as entregas desta empresa (evita baixar o banco inteiro)
@@ -768,6 +799,58 @@ export default function Dashboard({ user }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Conversa direta com o CONECTA ENTREGAS (privada: so voce e a Direcao) */}
+      {mostrarThread && (
+        <div style={{background: 'linear-gradient(135deg, rgba(99,102,241,0.22), rgba(168,85,247,0.18))',
+                     border: '2px solid #8b5cf6', borderRadius: 14, padding: '12px 14px', margin: '0 0 12px',
+                     boxShadow: '0 4px 16px rgba(139,92,246,0.35)'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+            <span style={{fontSize: '1.3rem'}}>💬</span>
+            <div>
+              <div style={{fontWeight: 900, fontSize: '0.85rem', color: '#c4b5fd', letterSpacing: '0.04em'}}>CONVERSA COM O CONECTA ENTREGAS!</div>
+              <div style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>Direção — privada, não é chat de entrega</div>
+            </div>
+          </div>
+          <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, maxHeight: 260, overflowY: 'auto'}}>
+            {threadLista.map(m => (
+              <div key={m.id} style={{alignSelf: m.de === 'master' ? 'flex-start' : 'flex-end', maxWidth: '88%',
+                                      background: m.de === 'master' ? 'rgba(139,92,246,0.35)' : 'rgba(16,185,129,0.25)',
+                                      border: m.de === 'master' ? '1px solid #8b5cf6' : '1px solid rgba(16,185,129,0.5)',
+                                      borderRadius: 10, padding: '8px 11px', fontSize: '0.85rem', lineHeight: 1.45}}>
+                <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.7, marginBottom: 2}}>
+                  {m.de === 'master' ? 'CONECTA ENTREGAS' : 'VOCÊ'}
+                </div>
+                {m.texto}
+                {m.timestamp && <div style={{fontSize: '0.6rem', opacity: 0.6, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
+              </div>
+            ))}
+          </div>
+          {threadFechada ? (
+            <div style={{background: 'rgba(2,6,23,0.5)', borderRadius: 10, padding: '10px 12px', textAlign: 'center'}}>
+              <div style={{fontSize: '0.78rem', fontWeight: 800, color: '#f87171', marginBottom: 8}}>🔒 Conversa encerrada pelo Conecta Entregas — você não pode mais responder.</div>
+              <button
+                onClick={() => { try { localStorage.setItem('thread_conecta_emp_oculta', String(threadFechada)); } catch { /* sem storage */ } setThreadOcultaEm(threadFechada); }}
+                style={{background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 18px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer'}}
+              >
+                OCULTAR
+              </button>
+            </div>
+          ) : (
+            <div style={{display: 'flex', gap: 8}}>
+              <input value={resposta} onChange={e => setResposta(e.target.value)} maxLength={500}
+                onKeyDown={e => { if (e.key === 'Enter') enviarResposta(); }}
+                placeholder="Responder ao Conecta Entregas..."
+                style={{flex: 1, background: 'rgba(2,6,23,0.6)', border: '1px solid #8b5cf6', borderRadius: 10, padding: '10px 12px', color: '#f8fafc', fontSize: '0.85rem'}} />
+              <button onClick={enviarResposta} disabled={enviandoResp || !resposta.trim()}
+                style={{background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: 10, padding: '0 18px', fontWeight: 800, fontSize: '1rem', cursor: 'pointer', opacity: (enviandoResp || !resposta.trim()) ? 0.5 : 1}}
+              >
+                ➤
+              </button>
+            </div>
+          )}
         </div>
       )}
 

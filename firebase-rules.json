@@ -113,6 +113,24 @@
         }
       }
     },
+    "conversas_master_emp": {
+      ".read": "auth != null && root.child('admin').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "fechada": { ".read": "auth != null && auth.uid === $uid" },
+        "msgs": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$id": {
+            ".write": "auth != null && auth.uid === $uid && root.child('conversas_master_emp').child($uid).child('msgs').exists() && !root.child('conversas_master_emp').child($uid).child('fechada').exists() && newData.child('de').val() === 'empresa'",
+            "texto": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
+            "de": { ".validate": "newData.val() === 'empresa' || newData.val() === 'master'" },
+            "timestamp": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    },
     "mensagens": {
       ".read": "auth != null && (root.child('admin').child(auth.uid).val() === true || (query.orderByChild === 'empresaId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregadorId' && query.equalTo === auth.uid) || (query.orderByChild === 'entregaId' && (root.child('entregas').child(query.equalTo).child('empresaId').val() === auth.uid || root.child('entregas').child(query.equalTo).child('entregadorId').val() === auth.uid)))",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
