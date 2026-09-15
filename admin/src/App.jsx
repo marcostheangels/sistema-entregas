@@ -10,7 +10,7 @@ const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
 const APP_VERSAO_ENTREGADOR = '1.4.21';
 // Carimbo do build (confira no rodape do painel para saber se esta na versao nova)
-const MASTER_BUILD = '2026-09-15 · 9f6d941';
+const MASTER_BUILD = '2026-09-15 · diag3';
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -302,7 +302,9 @@ function PainelAprovacoes({ user }) {
   const [avisoMsg, setAvisoMsg] = useState('');
   // Empresas aprovadas (para recado direto a uma empresa) + tipo do destino atual
   const empresasAprovadas = lista.filter(s => s.tipo === 'empresa' && s.aprovado);
-  const destTipo = avisoDestino === 'todos' ? 'todos' : (entregadores[avisoDestino] ? 'entregador' : 'empresa');
+  // Tipo + uid extraidos do valor da selecao (formato "tipo:uid") — sem adivinhar por mapa
+  const destTipo = avisoDestino === 'todos' ? 'todos' : avisoDestino.split(':')[0];
+  const destUid = avisoDestino === 'todos' ? null : avisoDestino.slice(avisoDestino.indexOf(':') + 1);
   // Grava e CONFIRMA a leitura de volta: se o banco negar (regras desatualizadas), aparece o erro na hora
   const confirmarPush = async (caminho, payload) => {
     const r = await push(ref(db, caminho), payload);
@@ -333,23 +335,23 @@ function PainelAprovacoes({ user }) {
     return u;
   }, []);
   useEffect(() => {
-    if (destTipo !== 'empresa') { setHistEmp([]); return; }
-    const u = onValue(query(ref(db, `avisos/${avisoDestino}`), limitToLast(3)), s => {
+    if (destTipo !== 'empresa' || !destUid) { setHistEmp([]); return; }
+    const u = onValue(query(ref(db, `avisos/${destUid}`), limitToLast(3)), s => {
       const l = []; s.forEach(c => l.push({ id: c.key, ...c.val() }));
       setHistEmp(l.reverse());
     }, () => {});
     return u;
-  }, [avisoDestino, destTipo]);
+  }, [destUid, destTipo]);
 
   // Aviso unico para UMA empresa especifica (banner no painel dela)
   const [avisoEmpTexto, setAvisoEmpTexto] = useState('');
   const enviarAvisoEmpresa = async () => {
     const texto = avisoEmpTexto.trim().slice(0, 500);
-    console.log('[Master] enviar aviso empresa:', { destino: avisoDestino, destTipo, tamanho: texto.length });
+    console.log('[Master] enviar aviso empresa:', { destino: avisoDestino, destTipo, destUid, tamanho: texto.length });
     if (!texto) { setAvisoMsg('❌ Escreva a mensagem.'); return; }
-    if (destTipo !== 'empresa') { setAvisoMsg('❌ Selecione uma 🏢 empresa no campo ao lado.'); return; }
+    if (destTipo !== 'empresa' || !destUid) { setAvisoMsg('❌ Selecione uma 🏢 empresa no campo ao lado.'); return; }
     try {
-      await confirmarPush(`avisos/${avisoDestino}`, { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() });
+      await confirmarPush(`avisos/${destUid}`, { texto, de: 'master', remetente: 'CONECTA ENTREGAS — Direção', timestamp: Date.now() });
       setAvisoEmpTexto('');
       setAvisoMsg('✅ Recado entregue no banco! Aparece no painel da empresa como RECADO DO CONECTA ENTREGAS!');
       setTimeout(() => setAvisoMsg(''), 4000);
@@ -361,28 +363,28 @@ function PainelAprovacoes({ user }) {
   const [threadFechada, setThreadFechada] = useState(null);
   const [threadTexto, setThreadTexto] = useState('');
   useEffect(() => {
-    if (destTipo !== 'entregador') { setThreadMsgs({}); setThreadFechada(null); return; }
-    const u1 = onValue(ref(db, `conversas_master/${avisoDestino}/msgs`), s => setThreadMsgs(s.val() || {}), () => {});
-    const u2 = onValue(ref(db, `conversas_master/${avisoDestino}/fechada`), s => setThreadFechada(s.val() ?? null), () => {});
+    if (destTipo !== 'entregador' || !destUid) { setThreadMsgs({}); setThreadFechada(null); return; }
+    const u1 = onValue(ref(db, `conversas_master/${destUid}/msgs`), s => setThreadMsgs(s.val() || {}), () => {});
+    const u2 = onValue(ref(db, `conversas_master/${destUid}/fechada`), s => setThreadFechada(s.val() ?? null), () => {});
     return () => { u1(); u2(); };
-  }, [avisoDestino, destTipo]);
+  }, [destUid, destTipo]);
   const threadLista = Object.entries(threadMsgs).map(([id, v]) => ({ id, ...v })).filter(m => m.texto).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   const enviarThread = async () => {
     const texto = threadTexto.trim().slice(0, 500);
-    if (!texto || destTipo !== 'entregador') return;
+    if (!texto || destTipo !== 'entregador' || !destUid) return;
     try {
-      await confirmarPush(`conversas_master/${avisoDestino}/msgs`, { texto, de: 'master', timestamp: Date.now() });
+      await confirmarPush(`conversas_master/${destUid}/msgs`, { texto, de: 'master', timestamp: Date.now() });
       setThreadTexto('');
     } catch (e) { setAvisoMsg('❌ ' + (e?.message || e)); }
   };
   const alternarFechada = async () => {
-    if (destTipo !== 'entregador') return;
+    if (destTipo !== 'entregador' || !destUid) return;
     try {
       if (threadFechada) {
-        await remove(ref(db, `conversas_master/${avisoDestino}/fechada`));
+        await remove(ref(db, `conversas_master/${destUid}/fechada`));
       } else {
         if (!window.confirm('🔒 ENCERRAR a conversa?\n\nO entregador NÃO poderá mais responder.')) return;
-        await set(ref(db, `conversas_master/${avisoDestino}/fechada`), Date.now());
+        await set(ref(db, `conversas_master/${destUid}/fechada`), Date.now());
       }
     } catch (e) { setAvisoMsg('❌ ' + e.message); }
   };
@@ -799,12 +801,12 @@ function PainelAprovacoes({ user }) {
             <option value="todos">📣 TODOS (apps + painéis)</option>
             <optgroup label="🛵 Entregadores (conversa)">
               {Object.entries(entregadores).map(([uid, p]) => (
-                <option key={uid} value={uid}>🛵 {(p.nome && !p.nome.includes('@') ? p.nome : p.email) || uid}</option>
+                <option key={uid} value={`entregador:${uid}`}>🛵 {(p.nome && !p.nome.includes('@') ? p.nome : p.email) || uid}</option>
               ))}
             </optgroup>
             <optgroup label="🏢 Empresas (aviso)">
               {empresasAprovadas.map(s => (
-                <option key={s.id} value={s.id}>🏢 {(s.nome && !s.nome.includes('@') ? s.nome : s.email) || s.id}</option>
+                <option key={s.id} value={`empresa:${s.id}`}>🏢 {(s.nome && !s.nome.includes('@') ? s.nome : s.email) || s.id}</option>
               ))}
             </optgroup>
           </select>
