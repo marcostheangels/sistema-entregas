@@ -8,7 +8,7 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.21';
+const APP_VERSAO_ENTREGADOR = '1.4.22';
 // Carimbo do build (confira no rodape do painel para saber se esta na versao nova)
 const MASTER_BUILD = '2026-09-15 · diag3';
 
@@ -896,11 +896,14 @@ function PainelAprovacoes({ user }) {
               {threadLista.length === 0 && <div style={{fontSize: '0.75rem', color: '#64748b'}}>Nenhuma mensagem ainda. Escreva abaixo para abrir a conversa.</div>}
               {threadLista.map(m => (
                 <div key={m.id} style={{alignSelf: m.de === 'master' ? 'flex-end' : 'flex-start', maxWidth: '85%',
-                                        background: m.de === 'master' ? '#8b5cf6' : '#1e293b', color: '#fff',
-                                        borderRadius: 10, padding: '7px 11px', fontSize: '0.8rem', lineHeight: 1.45}}>
-                  <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.75, marginBottom: 2}}>{m.de === 'master' ? 'VOCÊ (MASTER)' : (destTipo === 'empresa' ? 'EMPRESA' : 'ENTREGADOR')}</div>
+                                        background: m.de === 'master' ? '#7c3aed' : '#0f172a', color: '#fff',
+                                        border: m.de === 'master' ? '1px solid #c4b5fd' : '1px solid #475569',
+                                        boxShadow: m.de === 'master' ? '0 2px 12px rgba(124,58,237,0.55)' : 'none',
+                                        borderRadius: 10, padding: '9px 12px', fontSize: '0.85rem', fontWeight: 600, lineHeight: 1.45}}>
+                  <div style={{fontSize: '0.68rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: 3,
+                               color: m.de === 'master' ? '#ede9fe' : '#cbd5e1'}}>{m.de === 'master' ? '✔ VOCÊ (MASTER)' : (destTipo === 'empresa' ? 'EMPRESA' : 'ENTREGADOR')}</div>
                   {m.texto}
-                  {m.timestamp && <div style={{fontSize: '0.6rem', opacity: 0.6, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
+                  {m.timestamp && <div style={{fontSize: '0.65rem', opacity: 0.85, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
                 </div>
               ))}
             </div>

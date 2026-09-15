@@ -1727,14 +1727,16 @@ export default function Dashboard({ user, versao }) {
             <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, maxHeight: 260, overflowY: 'auto'}}>
               {threadLista.map(m => (
                 <div key={m.id} style={{alignSelf: m.de === 'master' ? 'flex-start' : 'flex-end', maxWidth: '88%',
-                                        background: m.de === 'master' ? 'rgba(139,92,246,0.35)' : 'rgba(16,185,129,0.25)',
-                                        border: m.de === 'master' ? '1px solid #8b5cf6' : '1px solid rgba(16,185,129,0.5)',
-                                        borderRadius: 10, padding: '8px 11px', fontSize: '0.85rem', lineHeight: 1.45}}>
-                  <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.7, marginBottom: 2}}>
-                    {m.de === 'master' ? 'CONECTA ENTREGAS' : 'VOCÊ'}
+                                        background: m.de === 'master' ? '#7c3aed' : 'rgba(16,185,129,0.35)', color: '#fff',
+                                        border: m.de === 'master' ? '1px solid #c4b5fd' : '1px solid rgba(16,185,129,0.6)',
+                                        boxShadow: m.de === 'master' ? '0 2px 12px rgba(124,58,237,0.55)' : 'none',
+                                        borderRadius: 10, padding: '9px 12px', fontSize: '0.88rem', fontWeight: 600, lineHeight: 1.45}}>
+                  <div style={{fontSize: '0.68rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: 3,
+                               color: m.de === 'master' ? '#ede9fe' : '#a7f3d0'}}>
+                    {m.de === 'master' ? '📢 CONECTA ENTREGAS' : '✔ VOCÊ'}
                   </div>
                   {m.texto}
-                  {m.timestamp && <div style={{fontSize: '0.6rem', opacity: 0.6, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
+                  {m.timestamp && <div style={{fontSize: '0.65rem', opacity: 0.85, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
                 </div>
               ))}
             </div>

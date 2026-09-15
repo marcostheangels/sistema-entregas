@@ -362,6 +362,80 @@ function ChatFlutuante({ empresaId, empresaNome, entregas, entregadores, posicoe
   );
 }
 
+// Chat flutuante com o CONECTA ENTREGAS (Direcao): sempre visivel, igual ao chat do entregador
+function ChatMaster({ threadLista, threadFechada, resposta, setResposta, enviandoResp, enviarResposta, onOcultar }) {
+  const [aberto, setAberto] = useState(false);
+  const [vistoEm, setVistoEm] = useState(() => {
+    try { return Number(localStorage.getItem('thread_master_emp_visto') || 0); } catch { return 0; }
+  });
+  const fimRef = useRef(null);
+  const novas = threadLista.filter(m => m.de === 'master' && (m.timestamp || 0) > vistoEm).length;
+
+  useEffect(() => {
+    if (aberto) {
+      const t = Date.now();
+      setVistoEm(t);
+      try { localStorage.setItem('thread_master_emp_visto', String(t)); } catch { /* sem storage */ }
+    }
+  }, [aberto, threadLista]);
+
+  useEffect(() => {
+    if (aberto && fimRef.current) fimRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [aberto, threadLista]);
+
+  if (threadLista.length === 0) return null;
+
+  return (
+    <div className="chat-flutuante" style={{ right: 'auto', left: '22px', bottom: '94px' }}>
+      {aberto && (
+        <div className="chat-painel" style={{ borderColor: '#8b5cf6' }}>
+          <div className="chat-header" style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}>
+            <div>
+              <div className="chat-titulo">📢 CONECTA ENTREGAS</div>
+              <div className="chat-subtitulo">Direção — conversa privada</div>
+            </div>
+            <button className="chat-fechar" onClick={() => setAberto(false)}>✕</button>
+          </div>
+          <div className="chat-mensagens">
+            {threadLista.map(m => (
+              <div key={m.id} className={`chat-msg ${m.de === 'master' ? 'dele' : 'minha'}`}>
+                <div className="chat-bolha" style={m.de === 'master'
+                  ? { background: '#7c3aed', color: '#fff', border: '1px solid #c4b5fd', fontWeight: 600 }
+                  : undefined}>
+                  {m.de === 'master' && <div style={{fontSize: '0.62rem', fontWeight: 900, color: '#ede9fe', marginBottom: 2}}>📢 CONECTA ENTREGAS</div>}
+                  {m.texto}
+                </div>
+                <div className="chat-hora">{m.timestamp ? new Date(m.timestamp).toLocaleString('pt-BR') : ''}</div>
+              </div>
+            ))}
+            <div ref={fimRef} />
+          </div>
+          {threadFechada ? (
+            <div className="chat-vazio" style={{padding: '12px 20px', fontSize: '0.75rem'}}>
+              🔒 Conversa encerrada pelo Conecta Entregas
+              <button onClick={onOcultar} style={{display: 'block', width: '100%', marginTop: 8, background: 'transparent',
+                      color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px',
+                      fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer'}}>OCULTAR</button>
+            </div>
+          ) : (
+            <div className="chat-input-linha">
+              <input value={resposta} onChange={e => setResposta(e.target.value)} maxLength={500}
+                onKeyDown={e => { if (e.key === 'Enter') enviarResposta(); }}
+                placeholder="Responder ao Conecta Entregas..." />
+              <button onClick={enviarResposta} disabled={enviandoResp || !resposta.trim()} style={{background: '#7c3aed'}}>➤</button>
+            </div>
+          )}
+        </div>
+      )}
+      <button className="chat-fab" style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)' }}
+        onClick={() => setAberto(a => !a)} title="Conversa com o ConectaEntregas">
+        {aberto ? '✕' : '📢'}
+        {!aberto && novas > 0 && <span className="chat-badge">{novas}</span>}
+      </button>
+    </div>
+  );
+}
+
 // Marcador estilo Uber: circulo colorido com emoji (coleta e destino)
 const iconeEmojiEmp = (emoji, cor) => L.divIcon({
   html: `<div style="width:34px;height:34px;border-radius:50%;background:${cor};display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 8px rgba(0,0,0,0.35);border:2.5px solid white;">${emoji}</div>`,
@@ -802,56 +876,17 @@ export default function Dashboard({ user }) {
         </div>
       )}
 
-      {/* Conversa direta com o CONECTA ENTREGAS (privada: so voce e a Direcao) */}
+      {/* Conversa com o CONECTA ENTREGAS: chat flutuante sempre visivel (igual ao do entregador) */}
       {mostrarThread && (
-        <div style={{background: 'linear-gradient(135deg, rgba(99,102,241,0.22), rgba(168,85,247,0.18))',
-                     border: '2px solid #8b5cf6', borderRadius: 14, padding: '12px 14px', margin: '0 0 12px',
-                     boxShadow: '0 4px 16px rgba(139,92,246,0.35)'}}>
-          <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
-            <span style={{fontSize: '1.3rem'}}>💬</span>
-            <div>
-              <div style={{fontWeight: 900, fontSize: '0.85rem', color: '#c4b5fd', letterSpacing: '0.04em'}}>CONVERSA COM O CONECTA ENTREGAS!</div>
-              <div style={{fontSize: '0.68rem', color: 'var(--text-muted)'}}>Direção — privada, não é chat de entrega</div>
-            </div>
-          </div>
-          <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8, maxHeight: 260, overflowY: 'auto'}}>
-            {threadLista.map(m => (
-              <div key={m.id} style={{alignSelf: m.de === 'master' ? 'flex-start' : 'flex-end', maxWidth: '88%',
-                                      background: m.de === 'master' ? 'rgba(139,92,246,0.35)' : 'rgba(16,185,129,0.25)',
-                                      border: m.de === 'master' ? '1px solid #8b5cf6' : '1px solid rgba(16,185,129,0.5)',
-                                      borderRadius: 10, padding: '8px 11px', fontSize: '0.85rem', lineHeight: 1.45}}>
-                <div style={{fontSize: '0.6rem', fontWeight: 800, opacity: 0.7, marginBottom: 2}}>
-                  {m.de === 'master' ? 'CONECTA ENTREGAS' : 'VOCÊ'}
-                </div>
-                {m.texto}
-                {m.timestamp && <div style={{fontSize: '0.6rem', opacity: 0.6, marginTop: 3}}>{new Date(m.timestamp).toLocaleString('pt-BR')}</div>}
-              </div>
-            ))}
-          </div>
-          {threadFechada ? (
-            <div style={{background: 'rgba(2,6,23,0.5)', borderRadius: 10, padding: '10px 12px', textAlign: 'center'}}>
-              <div style={{fontSize: '0.78rem', fontWeight: 800, color: '#f87171', marginBottom: 8}}>🔒 Conversa encerrada pelo Conecta Entregas — você não pode mais responder.</div>
-              <button
-                onClick={() => { try { localStorage.setItem('thread_conecta_emp_oculta', String(threadFechada)); } catch { /* sem storage */ } setThreadOcultaEm(threadFechada); }}
-                style={{background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 18px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer'}}
-              >
-                OCULTAR
-              </button>
-            </div>
-          ) : (
-            <div style={{display: 'flex', gap: 8}}>
-              <input value={resposta} onChange={e => setResposta(e.target.value)} maxLength={500}
-                onKeyDown={e => { if (e.key === 'Enter') enviarResposta(); }}
-                placeholder="Responder ao Conecta Entregas..."
-                style={{flex: 1, background: 'rgba(2,6,23,0.6)', border: '1px solid #8b5cf6', borderRadius: 10, padding: '10px 12px', color: '#f8fafc', fontSize: '0.85rem'}} />
-              <button onClick={enviarResposta} disabled={enviandoResp || !resposta.trim()}
-                style={{background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: 10, padding: '0 18px', fontWeight: 800, fontSize: '1rem', cursor: 'pointer', opacity: (enviandoResp || !resposta.trim()) ? 0.5 : 1}}
-              >
-                ➤
-              </button>
-            </div>
-          )}
-        </div>
+        <ChatMaster
+          threadLista={threadLista}
+          threadFechada={threadFechada}
+          resposta={resposta}
+          setResposta={setResposta}
+          enviandoResp={enviandoResp}
+          enviarResposta={enviarResposta}
+          onOcultar={() => { try { localStorage.setItem('thread_conecta_emp_oculta', String(threadFechada)); } catch { /* sem storage */ } setThreadOcultaEm(threadFechada); }}
+        />
       )}
 
       {/* WhatsApp direto com a Direcao do ConectaEntregas */}
