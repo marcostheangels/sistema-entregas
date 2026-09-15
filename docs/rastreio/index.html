@@ -89,17 +89,21 @@
 
     const id = new URLSearchParams(location.search).get('pedido');
     const caixa = document.getElementById('conteudo');
+    // Estado em escopo global do script: desenhar()/observarMapa() rodam fora do bloco else
+    let db = null, mapa = null, marcadorEntregador = null, marcadorDestino = null;
+    let entregaAtual = null;
+    let unsubPosicao = null;
+    let ultimaPos = null;
+    let usuarioMexeu = false;
     if (!id) { caixa.innerHTML = '<div class="erro"><h1>🔗 Link inválido</h1><p>Peça o link de rastreio correto à empresa.</p></div>'; }
     else {
-      const db = firebase.database();
-      let mapa = null, marcadorEntregador = null, marcadorDestino = null;
-      let entregaAtual = null;
-      let unsubPosicao = null;
+      db = firebase.database();
 
       function vigiarPosicao(uid) {
-        if (!uid) return;
-        if (unsubPosicao) { unsubPosicao(); unsubPosicao = null; }
-        unsubPosicao = db.ref('posicoes/' + uid).on('value', sp => {
+        if (!uid || !db) return;
+        if (unsubPosicao) { db.ref('posicoes/' + unsubPosicao).off('value'); unsubPosicao = null; }
+        unsubPosicao = uid;
+        db.ref('posicoes/' + uid).on('value', sp => {
           const p = sp.val();
           if (!p || !mapa) return;
           const online = p.online === true && (Date.now() - (p.timestamp || 0)) < 120000;
@@ -110,10 +114,11 @@
 
       function atualizarMarcadorEntregador(lat, lng) {
         if (!mapa || typeof lat !== 'number' || typeof lng !== 'number') return;
+        ultimaPos = { lat, lng };
         if (!marcadorEntregador) {
           const icone = L.divIcon({ html: '<div style="font-size:34px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🛵</div>', className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
           marcadorEntregador = L.marker([lat, lng], { icon: icone }).addTo(mapa);
-          mapa.setView([lat, lng], 15);
+          if (!usuarioMexeu) mapa.setView([lat, lng], 15);
         } else {
           marcadorEntregador.setLatLng([lat, lng]);
           mapa.panTo([lat, lng]);
@@ -207,8 +212,6 @@
         ? `<p class="sub" style="margin-top:10px">👤 Entregador: <strong>${escapar(entregadorNome)}</strong></p>`
         : '';
 
-      // Reusa o mapa ja criado: so substitui o conteudo do card, nao recria o mapa
-      const mapaJaExiste = !!mapa;
       caixa.innerHTML = `
         <div class="status-card">
           <div class="status-grande"><span class="bolinha ${d.status === 'entregue' ? 'ativa' : ''}" style="background:${corBola}"></span>${nomeStatus.toUpperCase()}</div>
@@ -227,11 +230,17 @@
         <div class="atualizado">Atualizado ${new Date().toLocaleTimeString('pt-BR')} · ConectaEntregas</div>
       `;
 
-      if (!mapaJaExiste) {
-        mapa = L.map('map', { zoomControl: false }).setView([-16.73, -43.86], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
-      }
-      setTimeout(() => mapa.invalidateSize(), 50);
+      // O innerHTML acima destruiu o #map antigo: recria o Leaflet do zero
+      // (reusar o objeto antigo o deixava preso ao elemento removido = mapa em branco)
+      if (mapa) { try { mapa.remove(); } catch { /* ja removido */ } mapa = null; }
+      marcadorEntregador = null;
+      marcadorDestino = null;
+      mapa = L.map('map', { zoomControl: false }).setView([-16.73, -43.86], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(mapa);
+      observarMapa();
+      setTimeout(() => { try { mapa.invalidateSize(); } catch { /* mapa removido */ } }, 50);
+      // Restaura a ultima posicao conhecida da moto no mapa novo
+      if (ultimaPos) atualizarMarcadorEntregador(ultimaPos.lat, ultimaPos.lng);
 
       const destinoLat = d.destinoLat || d.destino?.lat;
       const destinoLng = d.destinoLng || d.destino?.lng;
@@ -250,7 +259,6 @@
     }
 
     // Detecta quando o usuario move o mapa para nao roubar o controle
-    let usuarioMexeu = false;
     function observarMapa() {
       if (!mapa) return;
       mapa.on('dragstart zoomstart', () => { usuarioMexeu = true; });
