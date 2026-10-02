@@ -594,6 +594,125 @@ const MapaFrota = memo(({ entregadores, posicoes, currentUserId, empresaNome, en
   return prev.currentUserId === next.currentUserId && prev.empresaNome === next.empresaNome;
 })
 
+// ===== PAGAMENTO PIX AO MOTOBOY (QR + confirmação dupla) =====
+// A empresa gera o QR, paga no app do banco e toca "JÁ FIZ O PIX".
+// O dinheiro cai na conta do DONO da chave; o motoboy confere no banco
+// dele e toca "CONFIRMAR" no app — só aí o sistema dá como pago.
+function ModalPagarPix({ entrega, entregador, onFechar, onPago }) {
+  const [qrUrl, setQrUrl] = useState('');
+  const [brcode, setBrcode] = useState('');
+  const [erro, setErro] = useState('');
+  const [copiado, setCopiado] = useState(false);
+  const [pagando, setPagando] = useState(false);
+  const chave = (entregador?.pixChave || '').trim();
+  const bruto = parseFloat(entrega.valor || 0);
+  const taxa = parseFloat(entrega.taxaPlataforma || 0);
+  const liquido = Math.round((bruto - taxa) * 100) / 100;
+
+  useEffect(() => {
+    if (!chave || !(liquido > 0)) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const [{ gerarPixCopiaECola }, QRCode] = await Promise.all([import('./pix'), import('qrcode')]);
+        const codigo = gerarPixCopiaECola({
+          chave,
+          nome: entregador?.nome || entrega.entregadorNome || 'ENTREGADOR',
+          cidade: 'BRASIL',
+          valor: liquido,
+          txid: entrega.id
+        });
+        if (!vivo) return;
+        setBrcode(codigo);
+        setQrUrl(await QRCode.toDataURL(codigo, { width: 280, margin: 1 }));
+      } catch (e) {
+        if (vivo) setErro('Não consegui gerar o QR: ' + (e?.message || e));
+      }
+    })();
+    return () => { vivo = false; };
+  }, [chave, liquido, entrega.id, entrega.entregadorNome, entregador?.nome]);
+
+  const copiar = () => {
+    if (!brcode) return;
+    navigator.clipboard?.writeText(brcode)
+      .then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 2500); })
+      .catch(() => setErro('Não consegui copiar — selecione o código e copie manualmente.'));
+  };
+
+  const marcarPago = async () => {
+    if (!window.confirm(`Confirmar que você FEZ O PIX de R$ ${liquido.toFixed(2)} para ${entregador?.nome || entrega.entregadorNome || 'o motoboy'}?\n\nO motoboy vai conferir na conta dele e confirmar no app. Só depois aparece como PAGO CONFIRMADO.`)) return;
+    setPagando(true);
+    try {
+      await update(ref(db, `entregas/${entrega.id}`), {
+        pixStatus: 'pago_empresa', pixPagoEm: Date.now(), pixPagoValor: liquido, pixPagoMetodo: 'pix'
+      });
+      onPago();
+    } catch (e) {
+      setErro('Erro ao registrar: ' + (e?.message || e));
+    } finally {
+      setPagando(false);
+    }
+  };
+
+  return (
+    <div style={{position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto'}}>
+      <div style={{background: '#fff', color: '#111', borderRadius: 16, padding: 22, width: '100%', maxWidth: 400, textAlign: 'center'}}>
+        <h2 style={{margin: '0 0 4px', fontSize: '1.1rem'}}>💰 Pagar motoboy via Pix</h2>
+        <div style={{fontSize: '0.85rem', color: '#475569', marginBottom: 12}}>
+          {entregador?.nome || entrega.entregadorNome || 'Motoboy'} · chave: <strong style={{wordBreak: 'break-all'}}>{chave || '—'}</strong>
+        </div>
+        {!chave ? (
+          <div style={{background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 10, padding: 12, fontSize: '0.85rem', lineHeight: 1.5}}>
+            ⚠️ O motoboy ainda <strong>não cadastrou a chave Pix</strong> no app dele.<br />Peça para ele cadastrar em <strong>💰 Minha chave Pix</strong> e tente de novo — ou pague por outro meio.
+          </div>
+        ) : !(liquido > 0) ? (
+          <div style={{background: '#fee2e2', border: '1px solid #ef4444', borderRadius: 10, padding: 12, fontSize: '0.85rem'}}>
+            ❌ Sem valor a pagar nesta entrega.
+          </div>
+        ) : (
+          <>
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 4}}>
+              <span>Valor da entrega:</span><strong>R$ {bruto.toFixed(2)}</strong>
+            </div>
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 10}}>
+              <span>Taxa da plataforma:</span><span>− R$ {taxa.toFixed(2)}</span>
+            </div>
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 900, color: '#15803d', borderTop: '1px solid #e2e8f0', paddingTop: 10, marginBottom: 12}}>
+              <span>A pagar (líquido):</span><span>R$ {liquido.toFixed(2)}</span>
+            </div>
+            {qrUrl ? (
+              <img src={qrUrl} alt="QR Code Pix" style={{width: 220, height: 220, border: '1px solid #e2e8f0', borderRadius: 12}} />
+            ) : (
+              <div style={{fontSize: '0.85rem', color: '#64748b', padding: 20}}>Gerando QR Code...</div>
+            )}
+            <div style={{fontSize: '0.72rem', color: '#64748b', margin: '8px 0'}}>Escaneie com o app do banco <strong>ou</strong> use o copia e cola:</div>
+            <div style={{background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 8, padding: 8, fontSize: '0.65rem',
+                         wordBreak: 'break-all', maxHeight: 70, overflowY: 'auto', textAlign: 'left', fontFamily: 'monospace'}}>
+              {brcode || '...'}
+            </div>
+            <button onClick={copiar} disabled={!brcode}
+              style={{width: '100%', marginTop: 8, background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: 10, padding: 12, fontWeight: 800, cursor: 'pointer'}}>
+              {copiado ? '✅ CÓDIGO COPIADO!' : '📋 COPIAR CÓDIGO PIX'}
+            </button>
+            <button onClick={marcarPago} disabled={!brcode || pagando}
+              style={{width: '100%', marginTop: 8, background: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: 12, fontWeight: 800, cursor: 'pointer'}}>
+              {pagando ? 'REGISTRANDO...' : '✅ JÁ FIZ O PIX'}
+            </button>
+            <div style={{fontSize: '0.7rem', color: '#64748b', marginTop: 8, lineHeight: 1.5}}>
+              Toque acima DEPOIS de pagar no banco. O motoboy confirma no app dele e aí vira <strong>PAGO CONFIRMADO</strong>.
+            </div>
+          </>
+        )}
+        {erro && <div style={{fontSize: '0.78rem', color: '#dc2626', marginTop: 8, fontWeight: 700}}>{erro}</div>}
+        <button onClick={onFechar}
+          style={{width: '100%', marginTop: 10, background: 'transparent', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 10, padding: 10, fontWeight: 700, cursor: 'pointer'}}>
+          FECHAR
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Som de resposta recebida: dois bipes agudos curtos (diferente dos outros alertas)
 const tocarChimeResposta = () => {
   try {
@@ -642,6 +761,7 @@ export default function Dashboard({ user }) {
   }, [distanciaEstimadaKm, configPrecoKm]);
   const [statusFiltro, setStatusFiltro] = useState('pendente');
   const [salvando, setSalvando] = useState(false);
+  const [pagandoPix, setPagandoPix] = useState(null); // entrega aberta no modal de pagamento
 
   // ===== RECADOS DO CONECTA ENTREGAS (Direcao) — banner roxo, impossivel confundir =====
   const [avisosDir, setAvisosDir] = useState({});
@@ -863,6 +983,15 @@ export default function Dashboard({ user }) {
 
       <ChatFlutuante empresaId={user.uid} empresaNome={perfil?.nome || user.email} entregas={entregas} entregadores={entregadores} posicoes={posicoes} />
 
+      {pagandoPix && (
+        <ModalPagarPix
+          entrega={entregas.find(x => x.id === pagandoPix.id) || pagandoPix}
+          entregador={entregadores[(entregas.find(x => x.id === pagandoPix.id) || pagandoPix).entregadorId] || {}}
+          onFechar={() => setPagandoPix(null)}
+          onPago={() => setPagandoPix(null)}
+        />
+      )}
+
       {/* Recados do CONECTA ENTREGAS (Direcao) */}
       {(erroAvisos.direto || erroAvisos.geral) && (
         <div style={{background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10,
@@ -1015,7 +1144,21 @@ export default function Dashboard({ user }) {
                   {e.status === 'pendente' ? (
                     <button onClick={() => { remove(ref(db, `entregas/${e.id}`)); remove(ref(db, `rastreio/${e.id}`)); }} className="btn-cancel">CANCELAR</button>
                   ) : e.status === 'entregue' ? (
-                    <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Finalizado {e.entregueEm ? new Date(e.entregueEm).toLocaleTimeString() : ''} · ✔ código validado</span>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end'}}>
+                      <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Finalizado {e.entregueEm ? new Date(e.entregueEm).toLocaleTimeString() : ''} · ✔ código validado</span>
+                      {e.pixStatus === 'confirmado' ? (
+                        <span style={{fontSize: '0.72rem', fontWeight: 800, color: 'var(--success)'}}>✅ PAGO CONFIRMADO {e.pixConfirmadoEm ? `· ${new Date(e.pixConfirmadoEm).toLocaleString('pt-BR')}` : ''}</span>
+                      ) : e.pixStatus === 'pago_empresa' ? (
+                        <span style={{fontSize: '0.72rem', fontWeight: 800, color: '#f59e0b'}}>⏳ PIX feito — aguardando o motoboy confirmar no app</span>
+                      ) : e.pixStatus === 'contestado' ? (
+                        <div style={{display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end'}}>
+                          <span style={{fontSize: '0.72rem', fontWeight: 800, color: '#ef4444'}}>❌ Motoboy diz que NÃO recebeu</span>
+                          <button onClick={() => setPagandoPix(e)} style={{padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--success)', color: '#fff', fontWeight: 800, fontSize: '0.72rem', cursor: 'pointer'}}>💰 PAGAR DE NOVO</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setPagandoPix(e)} style={{padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--success)', color: '#fff', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer'}}>💰 PAGAR MOTOBOY (PIX)</button>
+                      )}
+                    </div>
                   ) : e.status === 'cancelado' ? (
                     <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Cancelada {e.canceladoEm ? `· ${new Date(e.canceladoEm).toLocaleString('pt-BR')}` : ''}</span>
                   ) : (
@@ -1173,7 +1316,11 @@ export default function Dashboard({ user }) {
                     <div style={{fontSize: '0.8rem'}}>{entregadores[e.entregadorId]?.veiculo || 'N/A'}</div>
                     <div style={{fontSize: '0.75rem', fontWeight: 700}}>PLACA: {entregadores[e.entregadorId]?.placa || 'N/A'}</div>
                   </td>
-                  <td style={{fontWeight: 800, color: 'var(--success)'}}>R$ {e.valor}</td>
+                  <td style={{fontWeight: 800, color: 'var(--success)'}}>R$ {e.valor}
+                    {e.pixStatus === 'confirmado' && <div style={{fontSize: '0.65rem', color: 'var(--success)'}}>✅ pago</div>}
+                    {e.pixStatus === 'pago_empresa' && <div style={{fontSize: '0.65rem', color: '#f59e0b'}}>⏳ a confirmar</div>}
+                    {e.pixStatus === 'contestado' && <div style={{fontSize: '0.65rem', color: '#ef4444'}}>❌ não recebido</div>}
+                  </td>
                   <td><span className="badge badge-entregue">CONCLUÍDO</span></td>
                 </tr>
               ))}
@@ -1185,7 +1332,7 @@ export default function Dashboard({ user }) {
         </div>
       </div>
       <div style={{textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-muted)', padding: '18px 0 8px'}}>
-        ConectaEntregas Empresas · build 2026-10-02 · ban-ficha
+        ConectaEntregas Empresas · build 2026-10-02 · pagar-pix
       </div>
     </div>
   );

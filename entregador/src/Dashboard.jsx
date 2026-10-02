@@ -828,6 +828,41 @@ export default function Dashboard({ user, versao }) {
   const [agora, setAgora] = useState(Date.now());
   const [empresasBloqueadas, setEmpresasBloqueadas] = useState({});
   const [listaEmpresas, setListaEmpresas] = useState({}); // NOVO: Para saber os nomes das empresas
+  // Confirmação de recebimento PIX: a empresa paga, o dinheiro cai na SUA conta,
+  // você confere no banco e confirma aqui — só aí vira PAGO CONFIRMADO lá.
+  const confirmarPix = async (e, recebido) => {
+    const acao = recebido ? 'confirmar' : 'contestar';
+    const msg = recebido
+      ? `✅ Confirmar que o PIX de R$ ${(Number(e.pixPagoValor || e.valor) || 0).toFixed(2)} CAIU na sua conta?\n\nConfirme só depois de conferir no app do seu banco!`
+      : `❌ Informar que o PIX de R$ ${(Number(e.pixPagoValor || e.valor) || 0).toFixed(2)} NÃO caiu na sua conta?\n\nA empresa será avisada para verificar e pagar de novo.`;
+    if (!window.confirm(msg)) return;
+    try {
+      if (recebido) {
+        await update(ref(db, `entregas/${e.id}`), { pixStatus: 'confirmado', pixConfirmadoEm: Date.now() });
+      } else {
+        await update(ref(db, `entregas/${e.id}`), { pixStatus: 'contestado', pixContestadoEm: Date.now() });
+      }
+    } catch (err) {
+      alert('❌ Não consegui registrar: ' + (err?.message || err));
+    }
+  };
+  // Minha chave Pix: as empresas pagam as corridas nela (QR gerado no painel delas)
+  const [pixChave, setPixChave] = useState('');
+  const [editandoPix, setEditandoPix] = useState(false);
+  const [pixTmp, setPixTmp] = useState('');
+  const [pixMsg, setPixMsg] = useState('');
+  const salvarPix = async () => {
+    const chave = pixTmp.trim();
+    if (!chave) { setPixMsg('Digite sua chave Pix (CPF, celular, e-mail ou aleatória).'); return; }
+    if (chave.length < 4) { setPixMsg('Chave muito curta — confira.'); return; }
+    try {
+      await update(ref(db, `entregadores/${user.uid}`), { pixChave: chave });
+      setPixMsg('✅ Chave salva! As empresas vão te pagar nela.');
+      setEditandoPix(false);
+    } catch (e) {
+      setPixMsg('❌ Não consegui salvar: ' + (e?.message || e));
+    }
+  };
   const [permissoes, setPermissoes] = useState({
     localizacao: false,
     localizacaoSempre: false,
@@ -987,6 +1022,7 @@ export default function Dashboard({ user, versao }) {
 
     const unsub = onValue(ref(db, `entregadores/${user.uid}`), (snap) => {
       const info = snap.val() || {};
+      if (typeof info.pixChave === 'string') setPixChave(info.pixChave);
       const isBlocked = info.bloqueado === true;
       const empBlocked = info.empresasBloqueadas || {};
 
@@ -1777,6 +1813,62 @@ export default function Dashboard({ user, versao }) {
             </span>
           </div>
         </div>
+
+        {/* Minha chave Pix: empresas me pagam nela via QR no painel delas */}
+        <div className="widget-card">
+          <div className="widget-header">
+            <span className="widget-title">💰 Minha chave Pix</span>
+          </div>
+          {!editandoPix ? (
+            <div>
+              <div style={{fontSize: '0.85rem', marginBottom: 4, wordBreak: 'break-all'}}>
+                {pixChave ? <strong>{pixChave}</strong> : <span style={{color: 'var(--text-muted)'}}>Nenhuma chave cadastrada — as empresas não conseguem te pagar via QR.</span>}
+              </div>
+              <div style={{fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5}}>
+                Cadastre a chave da SUA conta (CPF, celular, e-mail ou aleatória). No fim da entrega a empresa gera o QR e o dinheiro cai aí.
+              </div>
+              <button className="btn-full" style={{background: 'var(--primary)', color: '#fff'}}
+                onClick={() => { setPixTmp(pixChave); setPixMsg(''); setEditandoPix(true); }}>
+                {pixChave ? '✏️ TROCAR CHAVE' : '➕ CADASTRAR CHAVE'}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <input value={pixTmp} onChange={e => { setPixTmp(e.target.value); setPixMsg(''); }}
+                placeholder="Ex.: seu CPF, celular ou e-mail Pix"
+                style={{width: '100%', boxSizing: 'border-box', background: 'var(--background)', border: '1px solid var(--border)',
+                        borderRadius: 10, padding: '12px', color: '#fff', fontSize: '0.9rem', marginBottom: 8}} />
+              {pixMsg && <div style={{fontSize: '0.75rem', marginBottom: 8, color: pixMsg.startsWith('✅') ? 'var(--success)' : '#f87171', fontWeight: 700}}>{pixMsg}</div>}
+              <div style={{display: 'flex', gap: 8}}>
+                <button className="btn-full" style={{background: 'var(--success)', color: '#fff'}} onClick={salvarPix}>SALVAR</button>
+                <button className="btn-full" style={{background: 'var(--surface-light)', color: '#fff'}} onClick={() => setEditandoPix(false)}>VOLTAR</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Pagamentos PIX a confirmar: a empresa diz que pagou — confira no banco e confirme */}
+        {entregas.filter(e => e.entregadorId === user.uid && e.pixStatus === 'pago_empresa').map(e => (
+          <div key={e.id} className="widget-card" style={{border: '2px solid #f59e0b', background: 'rgba(245,158,11,0.07)'}}>
+            <div className="widget-header">
+              <span className="widget-title">💰 Pagamento a confirmar</span>
+            </div>
+            <div style={{fontSize: '0.85rem', marginBottom: 4}}>
+              <strong>{e.empresaNome || 'Empresa'}</strong> diz que fez o PIX de{' '}
+              <strong style={{color: 'var(--success)', fontSize: '1.05rem'}}>R$ {(Number(e.pixPagoValor || e.valor) || 0).toFixed(2)}</strong>
+            </div>
+            <div style={{fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5}}>
+              1️⃣ Abra o app do <strong>seu banco</strong> e confira se o dinheiro caiu na sua conta.<br />
+              2️⃣ Só depois toque abaixo — isso libera o "pago" no sistema da empresa.
+            </div>
+            <div style={{display: 'flex', gap: 8}}>
+              <button className="btn-full" style={{background: 'var(--success)', color: '#fff'}}
+                onClick={() => confirmarPix(e, true)}>✅ CAIU — CONFIRMAR</button>
+              <button className="btn-full" style={{background: 'rgba(239,68,68,0.9)', color: '#fff'}}
+                onClick={() => confirmarPix(e, false)}>❌ NÃO RECEBI</button>
+            </div>
+          </div>
+        ))}
 
         {/* Mapa ao vivo da minha localizacao, estilo Uber/99 */}
         <MiniMapa posicao={posicao} online={isOnline} onExpand={() => setMapaCheio(true)} />

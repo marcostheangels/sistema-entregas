@@ -8,9 +8,9 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.26';
+const APP_VERSAO_ENTREGADOR = '1.4.27';
 // Carimbo do build (confira no rodape do painel para saber se esta na versao nova)
-const MASTER_BUILD = '2026-10-02 · fix-trava-zap';
+const MASTER_BUILD = '2026-10-02 · validacao-pix';
 
 // Rotulos dos documentos (entregador + empresa)
 const ROTULOS_DOCS = {

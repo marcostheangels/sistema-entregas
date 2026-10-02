@@ -164,6 +164,56 @@ export default function Auth({ onAuth, versao }) {
     return valor.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
   };
 
+  // ===== Validação campo a campo (vermelho + mensagem do que está errado) =====
+  const [erros, setErros] = useState({}); // { campo: 'mensagem' }
+  const [avisos, setAvisos] = useState({}); // { campo: 'mensagem' } (amarelo, não bloqueia)
+  const [tocados, setTocados] = useState({});
+
+  const validarCampo = (campo, valores) => {
+    const v = valores[campo] ?? '';
+    switch (campo) {
+      case 'nome':
+        if (!String(v).trim()) return 'Informe seu nome completo.';
+        if (String(v).trim().length < 5) return 'Nome muito curto — digite o nome completo.';
+        return '';
+      case 'cpf': {
+        const n = String(v).replace(/\D/g, '');
+        if (!n) return 'Informe seu CPF.';
+        if (n.length !== 11) return 'CPF incompleto — são 11 números.';
+        if (!cpfValido(n)) return 'CPF inválido — confira os números digitados.';
+        return '';
+      }
+      case 'telefone': {
+        const n = String(v).replace(/\D/g, '');
+        if (!n) return 'Informe seu telefone (WhatsApp).';
+        if (n.length < 10) return 'Telefone incompleto — use DDD + número (ex.: 38 99999-0000).';
+        return '';
+      }
+      case 'email':
+        if (!String(v).trim()) return 'Informe seu e-mail.';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v).trim())) return 'E-mail inválido — ex.: voce@email.com.';
+        return '';
+      case 'senha':
+        if (!v) return 'Informe sua senha.';
+        if (String(v).length < 6) return 'Senha fraca — mínimo 6 caracteres.';
+        return '';
+      default: return '';
+    }
+  };
+
+  const validarAoSair = (campo, valor) => {
+    setTocados(p => ({ ...p, [campo]: true }));
+    setErros(p => ({ ...p, [campo]: validarCampo(campo, { [campo]: valor }) }));
+  };
+
+  const limparSeOk = (campo, valor) => {
+    if (!tocados[campo]) return;
+    const msg = validarCampo(campo, { [campo]: valor });
+    setErros(p => ({ ...p, [campo]: msg }));
+  };
+
+  const classeInput = (campo) => `auth-input${erros[campo] ? ' erro' : ''}`;
+
   const enviarRecuperacao = async () => {
     setMsgRecuperacao('');
     if (!email.trim()) { setMsgRecuperacao('⚠️ Digite seu e-mail acima primeiro.'); return; }
@@ -191,7 +241,19 @@ export default function Auth({ onAuth, versao }) {
       } catch { /* sem storage */ }
 
       if (isLogin) {
-        const cred = await signInWithEmailAndPassword(auth, email, senha);
+        // Valida formato antes de chamar o servidor (vermelho no campo errado)
+        const errLogin = {
+          email: validarCampo('email', { email }),
+          senha: senha ? '' : 'Informe sua senha.'
+        };
+        setErros(errLogin);
+        setTocados({ email: true, senha: true });
+        if (errLogin.email || errLogin.senha) {
+          setError('⚠️ Confira os campos marcados em vermelho.');
+          setLoading(false);
+          return;
+        }
+        const cred = await signInWithEmailAndPassword(auth, email.trim(), senha);
         // Bloqueia conta de empresa/outra origem ANTES de qualquer coisa
         const tipoBloqueado = await verificarTipoConta(cred.user.uid);
         if (tipoBloqueado) {
@@ -229,17 +291,19 @@ export default function Auth({ onAuth, versao }) {
         } catch { /* segue mesmo se nao conseguir reparar */ }
         onAuth(cred.user);
       } else {
-        if (!nome || !telefone || !cpf) {
-          setError('Preencha os campos obrigatórios (Nome, Telefone, CPF)');
+        // Valida TODOS os campos de uma vez (vermelho em cada um que estiver errado)
+        const campos = { nome, cpf, telefone, email, senha };
+        const novosErros = {};
+        Object.keys(campos).forEach(c => { novosErros[c] = validarCampo(c, campos); });
+        setErros(novosErros);
+        setAvisos({});
+        setTocados({ nome: true, cpf: true, telefone: true, email: true, senha: true });
+        if (Object.values(novosErros).some(Boolean)) {
+          setError('⚠️ Confira os campos marcados em vermelho e corrija.');
           setLoading(false);
           return;
         }
         const cpfNums = cpf.replace(/\D/g, '');
-        if (!cpfValido(cpfNums)) {
-          setError('⚠️ CPF inválido. Confira os 11 números digitados.');
-          setLoading(false);
-          return;
-        }
 
         let cred;
         try {
@@ -278,6 +342,35 @@ export default function Auth({ onAuth, versao }) {
           setError(`⛔ Cadastro bloqueado pelo administrador.${ban.motivo ? `\nMotivo: ${ban.motivo}` : '\nFale com o ConectaEntregas para resolver.'}`);
           setLoading(false);
           return;
+        }
+
+        // Duplicados: mesmo CPF ou e-mail em OUTRA conta (marca de vermelho e explica)
+        const emailNorm = email.trim().toLowerCase();
+        const telNums = telefone.replace(/\D/g, '');
+        const nomeNorm = nome.trim().toLowerCase();
+        let dupCpf = false, dupEmail = false, nomeDup = false;
+        try {
+          const snapEnt = await get(ref(db, 'entregadores')).catch(() => ({ val: () => null }));
+          Object.entries(snapEnt.val() || {}).forEach(([uid, r]) => {
+            if (uid === cred.user.uid || !r) return;
+            if (cpfNums && r.cpf && String(r.cpf).replace(/\D/g, '') === cpfNums) dupCpf = true;
+            if (emailNorm && String(r.email || '').trim().toLowerCase() === emailNorm) dupEmail = true;
+            if (nomeNorm && String(r.nome || '').trim().toLowerCase() === nomeNorm) nomeDup = true;
+          });
+        } catch { /* sem leitura: segue sem a checagem */ }
+        if (dupCpf || dupEmail) {
+          try { await deleteUser(cred.user); } catch { try { await signOut(auth); } catch { /* sem sessao */ } }
+          const novos = {};
+          if (dupCpf) novos.cpf = 'Este CPF já está cadastrado em outra conta — use seus dados ou recupere a conta antiga.';
+          if (dupEmail) novos.email = 'Este e-mail já está em uso por outra conta — faça login ou use outro e-mail.';
+          setErros(p => ({ ...p, ...novos }));
+          setTocados(p => ({ ...p, cpf: true, email: true }));
+          setError(`🔴 Dado repetido: ${dupCpf ? 'CPF' : ''}${dupCpf && dupEmail ? ' e ' : ''}${dupEmail ? 'e-mail' : ''} já cadastrado em outra conta. Corrija o campo em vermelho.`);
+          setLoading(false);
+          return;
+        }
+        if (nomeDup) {
+          setAvisos({ nome: 'Já existe outro cadastro com este nome — se for você, entre com seu e-mail antigo.' });
         }
 
         await updateProfile(cred.user, { displayName: nome });
@@ -349,21 +442,29 @@ export default function Auth({ onAuth, versao }) {
         return;
       }
 
-      // Tradução de erros comuns do Firebase para o usuário
+      // Tradução de erros comuns do Firebase para o usuário (marca os campos de vermelho)
       switch (err.code) {
         case 'auth/email-already-in-use':
-          setError('Este email já tem conta com outra senha diferente da informada.');
+          setErros(p => ({ ...p, email: 'Este e-mail já tem conta — faça login ou use outro e-mail.' }));
+          setTocados(p => ({ ...p, email: true }));
+          setError('🔴 Este e-mail já está cadastrado. Se é seu, clique em "Faça Login".');
           break;
         case 'auth/invalid-email':
-          setError('Email inválido.');
+          setErros(p => ({ ...p, email: 'E-mail inválido — ex.: voce@email.com.' }));
+          setTocados(p => ({ ...p, email: true }));
+          setError('🔴 Confira o e-mail marcado em vermelho.');
           break;
         case 'auth/weak-password':
-          setError('A senha deve ter pelo menos 6 caracteres.');
+          setErros(p => ({ ...p, senha: 'Senha fraca — mínimo 6 caracteres.' }));
+          setTocados(p => ({ ...p, senha: true }));
+          setError('🔴 Escolha uma senha maior (campo vermelho).');
           break;
         case 'auth/user-not-found':
         case 'auth/wrong-password':
         case 'auth/invalid-credential':
-          setError('Email ou senha incorretos.');
+          setErros(p => ({ ...p, email: 'Verifique este e-mail.', senha: 'Verifique sua senha.' }));
+          setTocados(p => ({ ...p, email: true, senha: true }));
+          setError('🔴 E-mail ou senha incorretos — confira os campos em vermelho.');
           break;
         default:
           setError('Erro ao processar: ' + err.message);
@@ -390,36 +491,43 @@ export default function Auth({ onAuth, versao }) {
               <div className="input-group">
                 <label>NOME COMPLETO *</label>
                 <input
-                  className="auth-input"
+                  className={classeInput('nome')}
                   type="text"
                   placeholder="Ex: João Silva"
                   value={nome}
-                  onChange={(e) => setNome(e.target.value)}
+                  onChange={(e) => { setNome(e.target.value); limparSeOk('nome', e.target.value); }}
+                  onBlur={(e) => validarAoSair('nome', e.target.value)}
                   required
                 />
+                {erros.nome && <span className="campo-erro">🔴 {erros.nome}</span>}
+                {avisos.nome && <span className="campo-aviso">🟡 {avisos.nome}</span>}
               </div>
               <div className="input-group">
                 <label>CPF *</label>
                 <input
-                  className="auth-input"
+                  className={classeInput('cpf')}
                   type="text"
                   placeholder="000.000.000-00"
                   value={cpf}
-                  onChange={(e) => setCpf(formatarCpf(e.target.value))}
+                  onChange={(e) => { setCpf(formatarCpf(e.target.value)); limparSeOk('cpf', e.target.value); }}
+                  onBlur={(e) => validarAoSair('cpf', e.target.value)}
                   maxLength={14}
                   required
                 />
+                {erros.cpf && <span className="campo-erro">🔴 {erros.cpf}</span>}
               </div>
               <div className="input-group">
                 <label>TELEFONE (WHATSAPP) *</label>
                 <input
-                  className="auth-input"
+                  className={classeInput('telefone')}
                   type="tel"
                   placeholder="(00) 00000-0000"
                   value={telefone}
-                  onChange={(e) => setTelefone(e.target.value)}
+                  onChange={(e) => { setTelefone(e.target.value); limparSeOk('telefone', e.target.value); }}
+                  onBlur={(e) => validarAoSair('telefone', e.target.value)}
                   required
                 />
+                {erros.telefone && <span className="campo-erro">🔴 {erros.telefone}</span>}
               </div>
               <div className="input-group">
                 <label>VEÍCULO (MODELO/COR)</label>
@@ -489,25 +597,29 @@ export default function Auth({ onAuth, versao }) {
           <div className="input-group">
             <label>EMAIL</label>
             <input
-              className="auth-input"
+              className={classeInput('email')}
               type="email"
               placeholder="seu@email.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); limparSeOk('email', e.target.value); }}
+              onBlur={(e) => validarAoSair('email', e.target.value)}
               required
             />
+            {erros.email && <span className="campo-erro">🔴 {erros.email}</span>}
           </div>
 
           <div className="input-group">
             <label>SENHA</label>
             <input
-              className="auth-input"
+              className={classeInput('senha')}
               type="password"
               placeholder="••••••••"
               value={senha}
-              onChange={(e) => setSenha(e.target.value)}
+              onChange={(e) => { setSenha(e.target.value); limparSeOk('senha', e.target.value); }}
+              onBlur={(e) => validarAoSair('senha', e.target.value)}
               required
             />
+            {erros.senha && <span className="campo-erro">🔴 {erros.senha}</span>}
           </div>
 
           <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
@@ -547,7 +659,7 @@ export default function Auth({ onAuth, versao }) {
 
         <div className="auth-toggle">
           {isLogin ? 'Novo por aqui? ' : 'Já possui conta? '}
-          <span onClick={() => setIsLogin(!isLogin)}>
+          <span onClick={() => { setIsLogin(!isLogin); setErros({}); setAvisos({}); setTocados({}); setError(''); }}>
             {isLogin ? 'Cadastre-se' : 'Faça Login'}
           </span>
         </div>
