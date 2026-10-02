@@ -8,7 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.27';
+export const APP_VERSAO = '1.4.28';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -298,6 +298,11 @@ function App() {
   const [criandoSolicitacao, setCriandoSolicitacao] = useState(false); // recriando pedido de aprovacao orfao
   const [erroSolicitacao, setErroSolicitacao] = useState(null); // null | 'recusado' | 'falha'
   const [banInfo, setBanInfo] = useState(null); // registro do ban (com o motivo do Master)
+  // Cadastro feito AGORA nesta sessão: trava em "aguardando" até o banco
+  // confirmar (nunca pisca o Dashboard liberado). Limpa ao aprovar/sair.
+  const [freshReg, setFreshReg] = useState(() => {
+    try { return !!sessionStorage.getItem('ga_fresh_register'); } catch { return false; }
+  });
   const [versaoMinima, setVersaoMinima] = useState(null);
   const [conexaoFalhou, setConexaoFalhou] = useState(false); // Firebase nao respondeu: tela de erro com tentar de novo
 
@@ -323,6 +328,8 @@ function App() {
       setErroSolicitacao(null);
       setCriandoSolicitacao(false);
       setBanInfo(null);
+      setFreshReg(false);
+      try { sessionStorage.removeItem('ga_fresh_register'); } catch { /* sem storage */ }
       if (unsubAprov) { unsubAprov(); unsubAprov = null; }
       if (!u) { setAprovado(null); setLoading(false); return; }
       setLoading(true);
@@ -367,6 +374,16 @@ function App() {
     }).catch(() => {});
   }, [user, aprovado, temPerfil, perfilCarregando, dadosAprov]);
 
+  // Cadastro fresquinho sem veredito ainda: limpa a trava quando o banco
+  // responder (aprovado ou não), quando banir/recusar ou der erro.
+  useEffect(() => {
+    if (!freshReg) return;
+    if (aprovado !== null || banInfo || erroSolicitacao) {
+      setFreshReg(false);
+      try { sessionStorage.removeItem('ga_fresh_register'); } catch { /* sem storage */ }
+    }
+  }, [freshReg, aprovado, banInfo, erroSolicitacao]);
+
   // Le o ban do Master EM TEMPO REAL (motivo exibido na tela; trava tudo).
   // Quando o Master DESBANE, limpa sozinho aqui mesmo — sem precisar sair/entrar.
   useEffect(() => {
@@ -386,7 +403,7 @@ function App() {
   // (Trava por ref + timeout: a tela de "enviando" nunca fica presa.)
   const criandoRef = useRef(false);
   useEffect(() => {
-    if (!user || aprovado !== null || perfilCarregando || !temPerfil || criandoRef.current || erroSolicitacao || banInfo) return;
+    if (!user || aprovado !== null || perfilCarregando || !temPerfil || criandoRef.current || erroSolicitacao || banInfo || freshReg) return;
     criandoRef.current = true;
     setCriandoSolicitacao(true);
     let cancelado = false;
@@ -434,7 +451,7 @@ function App() {
       }
     })();
     return () => { cancelado = true; };
-  }, [user, aprovado, temPerfil, perfilCarregando, erroSolicitacao, banInfo]);
+  }, [user, aprovado, temPerfil, perfilCarregando, erroSolicitacao, banInfo, freshReg]);
 
   if (loading) return conexaoFalhou ? (
     <div className="loading" style={{textAlign:'center', padding:'40px 24px'}}>
@@ -457,6 +474,8 @@ function App() {
 
   // Banido/recusado pelo Master: mostra o motivo e trava (vale p/ qualquer conta nova que ele tentar criar)
   if (user && banInfo) return <ContaBanida motivo={banInfo.motivo} versao={APP_VERSAO} email={user.email} />;
+
+  if (user && freshReg && aprovado === null) return <AguardandoAprovacao user={user} versao={APP_VERSAO} />;
 
   // Login cruzado bloqueado: conta de empresa (ou outro tipo) NAO entra no app do entregador
   if (user && tipoConta && tipoConta !== 'entregador') return <ContaIncorreta user={user} tipo={tipoConta} versao={APP_VERSAO} />;

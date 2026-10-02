@@ -419,6 +419,9 @@ export default function Auth({ onAuth, versao }) {
         const conf = await get(ref(db, `aprovacoes/${cred.user.uid}`));
         if (!conf.exists()) throw { code: 'aprovacao-nao-gravada' };
 
+        // Marca "cadastro fresco nesta sessão": o App NÃO mostra o Dashboard
+        // nem por 1 segundo até o bloqueio de "aguardando aprovação" carregar.
+        try { sessionStorage.setItem('ga_fresh_register', cred.user.uid); } catch { /* sem storage */ }
         onAuth(cred.user);
       }
     } catch (err) {
