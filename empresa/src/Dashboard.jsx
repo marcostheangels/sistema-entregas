@@ -1185,7 +1185,7 @@ export default function Dashboard({ user }) {
         </div>
       </div>
       <div style={{textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-muted)', padding: '18px 0 8px'}}>
-        ConectaEntregas Empresas · build 2026-10-02 · preco-km
+        ConectaEntregas Empresas · build 2026-10-02 · fix-aprovacao
       </div>
     </div>
   );

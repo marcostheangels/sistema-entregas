@@ -276,11 +276,21 @@ function App() {
                 // Perfil de ENTREGADOR existe: e conta de entregador, nao cria e bloqueia
                 return get(ref(db, `entregadores/${u.uid}`)).then(ent => {
                   if (ent.exists()) { setContaErrada(true); return null; }
-                  return get(ref(db, `empresas/${u.uid}`)).then(perf => {
-                    return set(ref(db, `aprovacoes/${u.uid}`), {
-                      tipo: 'empresa', nome: perf.val()?.nome || u.email, email: u.email,
+                  return get(ref(db, `empresas/${u.uid}`)).then(async (perf) => {
+                    const p = perf.val() || {};
+                    const pedidoFull = {
+                      tipo: 'empresa', nome: p.nome || u.email, email: p.email || u.email,
+                      telefone: p.telefone || '', endereco: p.endereco || '',
+                      cnpj: p.cnpj || '', responsavel: p.responsavel || '',
+                      documentos: p.documentos || {},
                       aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
-                    });
+                    };
+                    const { documentos: _d, cnpj: _c, responsavel: _r, ...pedidoMinimo } = pedidoFull;
+                    try {
+                      return await set(ref(db, `aprovacoes/${u.uid}`), pedidoFull);
+                    } catch {
+                      return await set(ref(db, `aprovacoes/${u.uid}`), pedidoMinimo);
+                    }
                   });
                 });
               });

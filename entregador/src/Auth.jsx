@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail, signOut } from 'firebase/auth';
-import { ref, set, get } from 'firebase/database';
+import { ref, set, get, remove } from 'firebase/database';
 import { auth, db } from './firebase';
 
 // Login cruzado: conta de EMPRESA (ou outro tipo) nao entra no app do entregador.
@@ -198,7 +198,7 @@ export default function Auth({ onAuth, versao }) {
         });
 
         // Solicitação de aprovação para o administrador (com todos os dados do cadastro)
-        await set(ref(db, `aprovacoes/${cred.user.uid}`), {
+        const pedidoFull = {
           tipo: 'entregador', nome, email,
           telefone: telefone.replace(/\D/g, ''),
           cpf: cpf.replace(/\D/g, ''),
@@ -207,12 +207,43 @@ export default function Auth({ onAuth, versao }) {
           endereco,
           documentos,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
-        });
+        };
+        // Pedido mínimo (sem os campos novos) — garante que o Master veja a
+        // solicitação mesmo se as regras do banco ainda forem as antigas
+        const { documentos: _docsFora, ...pedidoMinimo } = pedidoFull;
+        try {
+          await set(ref(db, `aprovacoes/${cred.user.uid}`), pedidoFull);
+        } catch {
+          await set(ref(db, `aprovacoes/${cred.user.uid}`), pedidoMinimo);
+        }
+
+        // Confirma que o pedido de aprovação foi GRAVADO de verdade.
+        // Sem essa checagem, se o banco negasse o pedido o app liberava direto (bug).
+        const conf = await get(ref(db, `aprovacoes/${cred.user.uid}`));
+        if (!conf.exists()) throw { code: 'aprovacao-nao-gravada' };
 
         onAuth(cred.user);
       }
     } catch (err) {
       console.error("Erro Auth:", err.code, err.message);
+
+      // Falha ao gravar o pedido de aprovação (quase sempre: regras do banco
+      // desatualizadas no Console do Firebase): desfaz o perfil, desloga e
+      // explica — NUNCA libera o app sem aprovação.
+      if (err.code === 'aprovacao-nao-gravada' || String(err.message || '').includes('PERMISSION_DENIED')) {
+        try {
+          const uid = auth.currentUser?.uid;
+          if (uid) {
+            await remove(ref(db, `entregadores/${uid}`)).catch(() => {});
+            await remove(ref(db, `aprovacoes/${uid}`)).catch(() => {});
+          }
+        } catch { /* segue para o deslogar */ }
+        try { await signOut(auth); } catch { /* sem sessao */ }
+        setError('⚠️ Não consegui enviar seu pedido de aprovação (banco recusou a gravação). ' +
+          'Avise o administrador: ele precisa PUBLICAR as regras novas (firebase-rules.json) ' +
+          'no Console do Firebase → Realtime Database → Rules. Depois tente cadastrar de novo.');
+        return;
+      }
 
       // Tradução de erros comuns do Firebase para o usuário
       switch (err.code) {

@@ -8,7 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.23';
+export const APP_VERSAO = '1.4.24';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -233,6 +233,8 @@ function App() {
   const [perfilCarregando, setPerfilCarregando] = useState(true);
   const [dadosAprov, setDadosAprov] = useState(null);
   const [tipoConta, setTipoConta] = useState(null); // 'entregador' | 'empresa' | ... — bloqueia login cruzado
+  const [criandoSolicitacao, setCriandoSolicitacao] = useState(false); // recriando pedido de aprovacao orfao
+  const [erroSolicitacao, setErroSolicitacao] = useState(null); // null | 'recusado' | 'falha'
   const [versaoMinima, setVersaoMinima] = useState(null);
   const [conexaoFalhou, setConexaoFalhou] = useState(false); // Firebase nao respondeu: tela de erro com tentar de novo
 
@@ -255,6 +257,8 @@ function App() {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setPerfilCarregando(true);
+      setErroSolicitacao(null);
+      setCriandoSolicitacao(false);
       if (unsubAprov) { unsubAprov(); unsubAprov = null; }
       if (!u) { setAprovado(null); setLoading(false); return; }
       setLoading(true);
@@ -299,6 +303,54 @@ function App() {
     }).catch(() => {});
   }, [user, aprovado, temPerfil, perfilCarregando, dadosAprov]);
 
+  // Recupera cadastro ORFAO: tem perfil mas o pedido de aprovacao nao existe
+  // (ex.: pedido negado pelas regras antigas antes de publicar as novas).
+  // Recria o pedido a partir do perfil — com os documentos — para o Master ver.
+  // So vale para perfil RECENTE (7 dias): conta antiga sem registro segue liberada.
+  // Cadastro RECUSADO pelo Master nunca e recriado.
+  useEffect(() => {
+    if (!user || aprovado !== null || perfilCarregando || !temPerfil || criandoSolicitacao || erroSolicitacao) return;
+    let cancelado = false;
+    (async () => {
+      setCriandoSolicitacao(true);
+      try {
+        const [snapPerfil, snapRec] = await Promise.all([
+          get(ref(db, `entregadores/${user.uid}`)),
+          get(ref(db, `recusados/${user.uid}`))
+        ]);
+        if (cancelado) return;
+        if (snapRec.val()) { setErroSolicitacao('recusado'); return; }
+        const p = snapPerfil.val() || {};
+        const idade = Date.now() - (p.createdAt || 0);
+        if (!p.createdAt || idade > 7 * 86400e3) return; // conta antiga: mantem comportamento atual
+        const pedidoFull = {
+          tipo: 'entregador',
+          nome: p.nome || user.email,
+          email: p.email || user.email,
+          telefone: p.telefone || '',
+          cpf: p.cpf || '',
+          veiculo: p.veiculo || '',
+          placa: (p.placa || '').toUpperCase(),
+          endereco: p.endereco || '',
+          documentos: p.documentos || {},
+          aprovado: false, criadoPor: user.uid, criadoEm: Date.now()
+        };
+        const { documentos: _d, ...pedidoMinimo } = pedidoFull;
+        try {
+          await set(ref(db, `aprovacoes/${user.uid}`), pedidoFull);
+        } catch {
+          await set(ref(db, `aprovacoes/${user.uid}`), pedidoMinimo);
+        }
+        // O listener de aprovacoes vai virar `false` sozinho e mostrar "em analise"
+      } catch {
+        if (!cancelado) setErroSolicitacao('falha');
+      } finally {
+        if (!cancelado) setCriandoSolicitacao(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [user, aprovado, temPerfil, perfilCarregando, criandoSolicitacao, erroSolicitacao]);
+
   if (loading) return conexaoFalhou ? (
     <div className="loading" style={{textAlign:'center', padding:'40px 24px'}}>
       <div style={{fontSize:'2.5rem', marginBottom:12}}>📡</div>
@@ -322,6 +374,43 @@ function App() {
   if (user && tipoConta && tipoConta !== 'entregador') return <ContaIncorreta user={user} tipo={tipoConta} versao={APP_VERSAO} />;
 
   if (user && aprovado === false) return <AguardandoAprovacao user={user} versao={APP_VERSAO} />;
+
+  // Pedido de aprovacao orfao sendo recriado: mostra espera em vez de liberar direto
+  if (user && criandoSolicitacao) return <div className="loading">Enviando sua solicitação de aprovação...</div>;
+
+  if (user && erroSolicitacao === 'recusado') return (
+    <div className="auth-wrapper">
+      <div className="auth-card animate-fade" style={{textAlign: 'center'}}>
+        <div className="auth-header">
+          <div className="auth-logo">⛔</div>
+          <h1 className="auth-title">Cadastro recusado</h1>
+          <p style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8, lineHeight: 1.5}}>
+            Este cadastro foi recusado pelo administrador. Se foi um engano, fale com o ConectaEntregas.
+          </p>
+        </div>
+        <button className="btn-primary" style={{marginTop: 20}} onClick={() => signOut(auth)}>SAIR</button>
+      </div>
+    </div>
+  );
+
+  if (user && erroSolicitacao === 'falha') return (
+    <div className="auth-wrapper">
+      <div className="auth-card animate-fade" style={{textAlign: 'center'}}>
+        <div className="auth-header">
+          <div className="auth-logo">📡</div>
+          <h1 className="auth-title">Falha na solicitação</h1>
+          <p style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8, lineHeight: 1.5}}>
+            Não consegui enviar seu pedido de aprovação (banco recusou).<br />
+            Avise o administrador para publicar as regras novas no Firebase e toque em tentar de novo.
+          </p>
+        </div>
+        <button className="btn-primary" style={{marginTop: 20}} onClick={() => { setErroSolicitacao(null); window.location.reload(); }}>TENTAR DE NOVO</button>
+        <div className="auth-toggle" style={{marginTop: 12}}>
+          <span onClick={() => signOut(auth)}>Sair da conta</span>
+        </div>
+      </div>
+    </div>
+  );
 
   if (user && !perfilCarregando && !temPerfil) {
     // Cadastro aprovado com perfil em restauracao: NUNCA mostra o formulario de cadastro
