@@ -1854,12 +1854,15 @@ export default function Dashboard({ user, versao }) {
               <span className="widget-title">💰 Pagamento a confirmar</span>
             </div>
             <div style={{fontSize: '0.85rem', marginBottom: 4}}>
-              <strong>{e.empresaNome || 'Empresa'}</strong> diz que fez o PIX de{' '}
-              <strong style={{color: 'var(--success)', fontSize: '1.05rem'}}>R$ {(Number(e.pixPagoValor || e.valor) || 0).toFixed(2)}</strong>
+              <strong>{e.empresaNome || 'Empresa'}</strong> diz que pagou{' '}
+              <strong style={{color: 'var(--success)', fontSize: '1.05rem'}}>R$ {(Number(e.pixPagoValor || e.valor) || 0).toFixed(2)}</strong>{' '}
+              <span style={{fontSize: '0.72rem', background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '2px 8px', fontWeight: 800}}>
+                {e.pixPagoMetodo === 'outro' ? '💵 EM DINHEIRO/OUTRO MEIO' : '📱 VIA PIX'}
+              </span>
             </div>
             <div style={{fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5}}>
-              1️⃣ Abra o app do <strong>seu banco</strong> e confira se o dinheiro caiu na sua conta.<br />
-              2️⃣ Só depois toque abaixo — isso libera o "pago" no sistema da empresa.
+              1️⃣ Confira se o dinheiro caiu na sua conta (banco ou bolso).<br />
+              2️⃣ Só depois toque abaixo — isso libera o sistema da empresa.
             </div>
             <div style={{display: 'flex', gap: 8}}>
               <button className="btn-full" style={{background: 'var(--success)', color: '#fff'}}
