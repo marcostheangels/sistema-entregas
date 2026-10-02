@@ -713,6 +713,151 @@ function ModalPagarPix({ entrega, entregador, onFechar, onPago }) {
   );
 }
 
+// ===== TELA GRANDE DE PAGAMENTO (trava o painel até pagar o motoboy) =====
+// Abre sozinha quando há entrega concluída sem pagamento (ou contestada).
+// Só fecha quando a empresa paga — e o "PAGO CONFIRMADO" só vem com o OK do motoboy.
+function TelaPagamentoBloqueio({ entrega, entregador, totalFila }) {
+  const [modo, setModo] = useState('escolha'); // 'escolha' | 'pix'
+  const [qrUrl, setQrUrl] = useState('');
+  const [brcode, setBrcode] = useState('');
+  const [erro, setErro] = useState('');
+  const [copiado, setCopiado] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const chave = (entregador?.pixChave || '').trim();
+  const bruto = parseFloat(entrega.valor || 0);
+  const taxa = parseFloat(entrega.taxaPlataforma || 0);
+  const liquido = Math.round((bruto - taxa) * 100) / 100;
+
+  useEffect(() => {
+    setModo('escolha');
+    setQrUrl('');
+    setBrcode('');
+    setErro('');
+    setCopiado(false);
+  }, [entrega.id]);
+
+  const gerarQr = async () => {
+    setModo('pix');
+    if (qrUrl || !chave || !(liquido > 0)) return;
+    try {
+      const [{ gerarPixCopiaECola }, QRCode] = await Promise.all([import('./pix'), import('qrcode')]);
+      const codigo = gerarPixCopiaECola({
+        chave,
+        nome: entregador?.nome || entrega.entregadorNome || 'ENTREGADOR',
+        cidade: 'BRASIL',
+        valor: liquido,
+        txid: entrega.id
+      });
+      setBrcode(codigo);
+      setQrUrl(await QRCode.toDataURL(codigo, { width: 340, margin: 1 }));
+    } catch (e) {
+      setErro('Não consegui gerar o QR: ' + (e?.message || e));
+    }
+  };
+
+  const copiar = () => {
+    if (!brcode) return;
+    navigator.clipboard?.writeText(brcode)
+      .then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 2500); })
+      .catch(() => setErro('Não consegui copiar — selecione o código e copie manualmente.'));
+  };
+
+  const registrarPagamento = async (metodo) => {
+    const rotulo = metodo === 'pix' ? `FEZ O PIX de R$ ${liquido.toFixed(2)}` : 'PAGOU POR OUTRO MEIO';
+    if (!window.confirm(`Confirmar que você ${rotulo} para ${entregador?.nome || entrega.entregadorNome || 'o motoboy'}?\n\nEle vai conferir e dar o OK no app. Só depois aparece PAGO CONFIRMADO.`)) return;
+    setEnviando(true);
+    try {
+      await update(ref(db, `entregas/${entrega.id}`), {
+        pixStatus: 'pago_empresa', pixPagoEm: Date.now(), pixPagoValor: liquido, pixPagoMetodo: metodo
+      });
+    } catch (e) {
+      setErro('Erro ao registrar: ' + (e?.message || e));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div style={{position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(2, 6, 23, 0.97)', display: 'flex',
+                 alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto'}}>
+      <div style={{background: '#fff', color: '#111', borderRadius: 20, padding: 28, width: '100%', maxWidth: 480,
+                   textAlign: 'center', border: '3px solid #16a34a'}}>
+        <div style={{fontSize: '3rem'}}>💰</div>
+        <h1 style={{margin: '4px 0', fontSize: '1.4rem'}}>PAGUE O MOTOBOY PARA LIBERAR</h1>
+        <div style={{fontSize: '0.85rem', color: '#475569', marginBottom: 4}}>
+          {totalFila > 1 ? `${totalFila} pagamentos pendentes — este é o 1º` : 'Existe 1 pagamento pendente'}
+        </div>
+        {entrega.pixStatus === 'contestado' && (
+          <div style={{background: '#fee2e2', border: '1px solid #ef4444', borderRadius: 10, padding: 10, fontSize: '0.85rem', marginBottom: 10, fontWeight: 700, color: '#b91c1c'}}>
+            ❌ O motoboy informou que NÃO recebeu o pagamento anterior. Confira e pague novamente.
+          </div>
+        )}
+        <div style={{background: '#f1f5f9', borderRadius: 12, padding: 12, marginBottom: 14, fontSize: '0.9rem', textAlign: 'left'}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 4}}>
+            <span>🛵 Motoboy:</span><strong>{entregador?.nome || entrega.entregadorNome || '—'}</strong>
+          </div>
+          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 4}}>
+            <span>📦 Entrega:</span><strong>#ORDEM-{entrega.id.slice(-4).toUpperCase()}</strong>
+          </div>
+          <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '1.15rem', fontWeight: 900, color: '#15803d', borderTop: '1px solid #e2e8f0', paddingTop: 8, marginTop: 8}}>
+            <span>A pagar:</span><span>R$ {liquido.toFixed(2)}</span>
+          </div>
+          <div style={{fontSize: '0.7rem', color: '#64748b', marginTop: 4}}>Valor da corrida R$ {bruto.toFixed(2)} − taxa R$ {taxa.toFixed(2)}</div>
+        </div>
+
+        {modo === 'escolha' ? (
+          <>
+            {!chave && (
+              <div style={{background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 10, padding: 10, fontSize: '0.82rem', marginBottom: 10, lineHeight: 1.5}}>
+                ⚠️ O motoboy ainda <strong>não cadastrou a chave Pix</strong>. Pague por outro meio abaixo — ele confirma no app do mesmo jeito.
+              </div>
+            )}
+            {chave && (
+              <button onClick={gerarQr} disabled={enviando}
+                style={{width: '100%', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 12, padding: 16, fontWeight: 900, fontSize: '1rem', cursor: 'pointer', marginBottom: 8}}>
+                📱 PAGAR COM PIX (QR CODE)
+              </button>
+            )}
+            <button onClick={() => registrarPagamento('outro')} disabled={enviando}
+              style={{width: '100%', background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: 12, padding: 14, fontWeight: 800, fontSize: '0.9rem', cursor: 'pointer'}}>
+              {enviando ? 'REGISTRANDO...' : '✅ PAGUEI POR OUTRO MEIO (DINHEIRO/CARTÃO)'}
+            </button>
+            <div style={{fontSize: '0.72rem', color: '#64748b', marginTop: 10, lineHeight: 1.5}}>
+              🔒 O painel libera após o pagamento — e o <strong>PAGO CONFIRMADO</strong> só aparece com o OK do motoboy no app dele.
+            </div>
+          </>
+        ) : (
+          <>
+            {qrUrl ? (
+              <img src={qrUrl} alt="QR Code Pix" style={{width: 260, height: 260, border: '1px solid #e2e8f0', borderRadius: 12}} />
+            ) : (
+              <div style={{fontSize: '0.9rem', color: '#64748b', padding: 30}}>Gerando QR Code...</div>
+            )}
+            <div style={{fontSize: '0.72rem', color: '#64748b', margin: '8px 0'}}>Chave: <strong style={{wordBreak: 'break-all'}}>{chave}</strong></div>
+            <div style={{background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 8, padding: 8, fontSize: '0.62rem',
+                         wordBreak: 'break-all', maxHeight: 64, overflowY: 'auto', textAlign: 'left', fontFamily: 'monospace'}}>
+              {brcode || '...'}
+            </div>
+            <button onClick={copiar} disabled={!brcode}
+              style={{width: '100%', marginTop: 8, background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: 10, padding: 12, fontWeight: 800, cursor: 'pointer'}}>
+              {copiado ? '✅ CÓDIGO COPIADO!' : '📋 COPIAR CÓDIGO PIX'}
+            </button>
+            <button onClick={() => registrarPagamento('pix')} disabled={!brcode || enviando}
+              style={{width: '100%', marginTop: 8, background: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: 14, fontWeight: 900, fontSize: '1rem', cursor: 'pointer'}}>
+              {enviando ? 'REGISTRANDO...' : '✅ JÁ FIZ O PIX — LIBERAR'}
+            </button>
+            <button onClick={() => setModo('escolha')} disabled={enviando}
+              style={{width: '100%', marginTop: 8, background: 'transparent', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 10, padding: 10, fontWeight: 700, cursor: 'pointer'}}>
+              ← VOLTAR
+            </button>
+          </>
+        )}
+        {erro && <div style={{fontSize: '0.8rem', color: '#dc2626', marginTop: 8, fontWeight: 700}}>{erro}</div>}
+      </div>
+    </div>
+  );
+}
+
 // Som de resposta recebida: dois bipes agudos curtos (diferente dos outros alertas)
 const tocarChimeResposta = () => {
   try {
@@ -762,6 +907,14 @@ export default function Dashboard({ user }) {
   const [statusFiltro, setStatusFiltro] = useState('pendente');
   const [salvando, setSalvando] = useState(false);
   const [pagandoPix, setPagandoPix] = useState(null); // entrega aberta no modal de pagamento
+
+  // Fila de pagamentos: entrega concluída sem pagamento (ou contestada) TRAVA o painel
+  const filaPagamento = useMemo(() => entregas
+    .filter(e => e.status === 'entregue' && (!e.pixStatus || e.pixStatus === 'contestado'))
+    .sort((a, b) => (a.entregueEm || a.createdAt || 0) - (b.entregueEm || b.createdAt || 0)),
+  [entregas]);
+  // Pagos aguardando o OK do motoboy (painel liberado, mas com aviso)
+  const aguardandoOk = useMemo(() => entregas.filter(e => e.status === 'entregue' && e.pixStatus === 'pago_empresa'), [entregas]);
 
   // ===== RECADOS DO CONECTA ENTREGAS (Direcao) — banner roxo, impossivel confundir =====
   const [avisosDir, setAvisosDir] = useState({});
@@ -990,6 +1143,23 @@ export default function Dashboard({ user }) {
           onFechar={() => setPagandoPix(null)}
           onPago={() => setPagandoPix(null)}
         />
+      )}
+
+      {/* Tela grande: pagamento pendente trava o painel até pagar */}
+      {filaPagamento.length > 0 && !pagandoPix && (
+        <TelaPagamentoBloqueio
+          entrega={filaPagamento[0]}
+          entregador={entregadores[filaPagamento[0].entregadorId] || {}}
+          totalFila={filaPagamento.length}
+        />
+      )}
+
+      {/* Pagos aguardando o OK do motoboy */}
+      {filaPagamento.length === 0 && aguardandoOk.length > 0 && (
+        <div style={{background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.5)',
+                     borderRadius: 12, padding: '10px 14px', margin: '0 0 12px', fontSize: '0.82rem', fontWeight: 700, color: '#f59e0b'}}>
+          ⏳ {aguardandoOk.length} pagamento(s) aguardando o motoboy confirmar no app — vira ✅ PAGO CONFIRMADO com o OK dele.
+        </div>
       )}
 
       {/* Recados do CONECTA ENTREGAS (Direcao) */}
@@ -1332,7 +1502,7 @@ export default function Dashboard({ user }) {
         </div>
       </div>
       <div style={{textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-muted)', padding: '18px 0 8px'}}>
-        ConectaEntregas Empresas · build 2026-10-02 · pedido-leve
+        ConectaEntregas Empresas · build 2026-10-02 · tela-pagamento
       </div>
     </div>
   );
