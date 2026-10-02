@@ -138,7 +138,6 @@ export default function Auth({ onAuth, versao }) {
   const [endereco, setEndereco] = useState('');
   const [docs, setDocs] = useState({ cnh: null, docMoto: null, comprovante: null, antecedentes: null });
   const [erroDoc, setErroDoc] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const escolherDoc = async (chave, file) => {
@@ -168,6 +167,18 @@ export default function Auth({ onAuth, versao }) {
   const [erros, setErros] = useState({}); // { campo: 'mensagem' }
   const [avisos, setAvisos] = useState({}); // { campo: 'mensagem' } (amarelo, não bloqueia)
   const [tocados, setTocados] = useState({});
+  // Erro salvo antes de deslogar (ex.: bloqueio do Master): ao voltar para o
+  // login, a tela remontaria limpa e o motivo se perderia. Mostra 1x aqui.
+  const [error, setError] = useState(() => {
+    try {
+      const msg = localStorage.getItem('ga_ultimo_erro');
+      if (msg) { localStorage.removeItem('ga_ultimo_erro'); return msg; }
+    } catch { /* sem storage */ }
+    return '';
+  });
+  const guardarErroSessao = (msg) => {
+    try { localStorage.setItem('ga_ultimo_erro', msg); } catch { /* sem storage */ }
+  };
 
   const validarCampo = (campo, valores) => {
     const v = valores[campo] ?? '';
@@ -339,6 +350,7 @@ export default function Auth({ onAuth, versao }) {
             await remove(ref(db, `aprovacoes/${cred.user.uid}`)).catch(() => {});
           } catch { /* segue para apagar a conta */ }
           try { await deleteUser(cred.user); } catch { try { await signOut(auth); } catch { /* sem sessao */ } }
+          guardarErroSessao(`⛔ Cadastro bloqueado pelo administrador.${ban.motivo ? ` Motivo: ${ban.motivo}` : ' Fale com o ConectaEntregas para resolver.'}`);
           setError(`⛔ Cadastro bloqueado pelo administrador.${ban.motivo ? `\nMotivo: ${ban.motivo}` : '\nFale com o ConectaEntregas para resolver.'}`);
           setLoading(false);
           return;
@@ -365,6 +377,7 @@ export default function Auth({ onAuth, versao }) {
           if (dupEmail) novos.email = 'Este e-mail já está em uso por outra conta — faça login ou use outro e-mail.';
           setErros(p => ({ ...p, ...novos }));
           setTocados(p => ({ ...p, cpf: true, email: true }));
+          guardarErroSessao(`🔴 Dado repetido: ${dupCpf ? 'CPF' : ''}${dupCpf && dupEmail ? ' e ' : ''}${dupEmail ? 'e-mail' : ''} já cadastrado em outra conta. Corrija o campo em vermelho.`);
           setError(`🔴 Dado repetido: ${dupCpf ? 'CPF' : ''}${dupCpf && dupEmail ? ' e ' : ''}${dupEmail ? 'e-mail' : ''} já cadastrado em outra conta. Corrija o campo em vermelho.`);
           setLoading(false);
           return;
@@ -439,6 +452,7 @@ export default function Auth({ onAuth, versao }) {
           }
         } catch { /* segue para o deslogar */ }
         try { await signOut(auth); } catch { /* sem sessao */ }
+        guardarErroSessao('⚠️ Não consegui enviar seu pedido de aprovação (banco recusou a gravação). Avise o administrador: ele precisa PUBLICAR as regras novas (firebase-rules.json) no Console do Firebase → Realtime Database → Rules. Depois tente cadastrar de novo.');
         setError('⚠️ Não consegui enviar seu pedido de aprovação (banco recusou a gravação). ' +
           'Avise o administrador: ele precisa PUBLICAR as regras novas (firebase-rules.json) ' +
           'no Console do Firebase → Realtime Database → Rules. Depois tente cadastrar de novo.');
