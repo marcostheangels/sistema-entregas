@@ -8,7 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.29';
+export const APP_VERSAO = '1.4.30';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -215,6 +215,12 @@ function CompletarCadastro({ user, dados }) {
     }
     setLoading(true);
     try {
+      // Preserva documentos já enviados (não apaga as fotos num recadastro)
+      let docsMantidos = {};
+      try {
+        const snapAtual = await get(ref(db, `entregadores/${user.uid}`));
+        if (snapAtual.val()?.documentos) docsMantidos = snapAtual.val().documentos;
+      } catch { /* segue sem preservar */ }
       await set(ref(db, `entregadores/${user.uid}`), {
         nome,
         email: user.email,
@@ -223,6 +229,7 @@ function CompletarCadastro({ user, dados }) {
         veiculo,
         placa: placa.toUpperCase(),
         endereco,
+        documentos: docsMantidos,
         status: 'disponivel',
         createdAt: Date.now()
       });
@@ -423,6 +430,7 @@ function App() {
         const idade = Date.now() - (p.createdAt || 0);
         if (!p.createdAt || idade > 7 * 86400e3) return; // conta antiga: mantem comportamento atual
         const dispositivo = await obterIdDispositivo().catch(() => '');
+        const qtdDocs = (p.documentos && typeof p.documentos === 'object') ? Object.keys(p.documentos).length : 0;
         const pedidoFull = {
           tipo: 'entregador',
           nome: p.nome || user.email,
@@ -432,11 +440,11 @@ function App() {
           veiculo: p.veiculo || '',
           placa: (p.placa || '').toUpperCase(),
           endereco: p.endereco || '',
-          documentos: p.documentos || {},
+          temDocumentos: qtdDocs > 0, qtdDocumentos: qtdDocs,
           dispositivo: p.dispositivo || dispositivo,
           aprovado: false, criadoPor: user.uid, criadoEm: Date.now()
         };
-        const { documentos: _d, dispositivo: _dev, ...pedidoMinimo } = pedidoFull;
+        const { temDocumentos: _td, qtdDocumentos: _qd, dispositivo: _dev, ...pedidoMinimo } = pedidoFull;
         try {
           await comTimeout(set(ref(db, `aprovacoes/${user.uid}`), pedidoFull), 20000);
         } catch {

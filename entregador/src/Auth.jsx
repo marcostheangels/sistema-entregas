@@ -73,30 +73,31 @@ export const verificarBanimento = async ({ cpfNums, telNums, email, dispositivo 
   return null;
 };
 
-// Comprime imagem no navegador (max 1024px, JPEG 0.7) para caber no banco sem estourar
+// Comprime imagem no navegador (max 800px, JPEG 0.6) para o envio ser RAPIDO
+// no 4G: pedido de aprovação chega no Master em segundos, não minutos
 const processarArquivoDoc = (file) => new Promise((resolve, reject) => {
-  const MAX_BYTES = 1.5 * 1024 * 1024;
+  const MAX_BYTES = 700 * 1024;
   if (file.size > 6 * 1024 * 1024) { reject(new Error('Arquivo muito grande (máx 6MB).')); return; }
   const reader = new FileReader();
   reader.onload = () => {
     // PDF ou não-imagem: salva direto como base64 (se couber)
     if (!file.type.startsWith('image/')) {
-      if (file.size > MAX_BYTES) { reject(new Error('PDF muito grande (máx 1,5MB). Tire um print/foto.')); return; }
+      if (file.size > MAX_BYTES) { reject(new Error('PDF muito grande (máx 700KB). Tire um print/foto.')); return; }
       resolve({ nome: file.name, tipo: file.type || 'application/pdf', dados: reader.result });
       return;
     }
     const img = new Image();
     img.onload = () => {
       try {
-        const MAX = 1024;
+        const MAX = 800;
         let { width: w, height: h } = img;
         const escala = Math.min(1, MAX / Math.max(w, h));
         w = Math.round(w * escala); h = Math.round(h * escala);
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        const dados = canvas.toDataURL('image/jpeg', 0.7);
-        if (dados.length > 2 * 1024 * 1024) { reject(new Error('Imagem ainda muito grande. Tente uma foto mais simples.')); return; }
+        const dados = canvas.toDataURL('image/jpeg', 0.6);
+        if (dados.length > 950 * 1024) { reject(new Error('Foto muito pesada. Tire de novo mais de perto do documento.')); return; }
         resolve({ nome: file.name, tipo: 'image/jpeg', dados });
       } catch (e) { reject(e); }
     };
@@ -225,6 +226,9 @@ export default function Auth({ onAuth, versao }) {
 
   const classeInput = (campo) => `auth-input${erros[campo] ? ' erro' : ''}`;
 
+  // Etapa do envio (cadastro com fotos pode levar alguns segundos no 4G)
+  const [infoEnvio, setInfoEnvio] = useState('');
+
   const enviarRecuperacao = async () => {
     setMsgRecuperacao('');
     if (!email.trim()) { setMsgRecuperacao('⚠️ Digite seu e-mail acima primeiro.'); return; }
@@ -241,6 +245,7 @@ export default function Auth({ onAuth, versao }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setInfoEnvio('');
     setLoading(true);
 
     try {
@@ -388,10 +393,14 @@ export default function Auth({ onAuth, versao }) {
 
         await updateProfile(cred.user, { displayName: nome });
 
-        // Documentos anexados (fotos comprimidas em base64 — o Master vê no painel)
+        // Documentos anexados (fotos comprimidas em base64 — o Master vê no painel).
+        // Vão SÓ no perfil: o pedido leva só um aviso "tem documentos" para
+        // chegar no Master em segundos (pedido pesado demorava minutos no 4G).
         const documentos = {};
         Object.entries(docs).forEach(([k, v]) => { if (v) documentos[k] = v; });
+        const qtdDocs = Object.keys(documentos).length;
 
+        setInfoEnvio('📤 Salvando seus dados...');
         await set(ref(db, `entregadores/${cred.user.uid}`), {
           nome,
           email,
@@ -406,7 +415,8 @@ export default function Auth({ onAuth, versao }) {
           createdAt: Date.now()
         });
 
-        // Solicitação de aprovação para o administrador (com todos os dados do cadastro)
+        // Solicitação de aprovação para o administrador (LEVE: sem as fotos)
+        setInfoEnvio(qtdDocs ? '📤 Enviando documentos...' : '📤 Enviando pedido de aprovação...');
         const pedidoFull = {
           tipo: 'entregador', nome, email,
           telefone: telefone.replace(/\D/g, ''),
@@ -414,18 +424,19 @@ export default function Auth({ onAuth, versao }) {
           veiculo,
           placa: placa.toUpperCase(),
           endereco,
-          documentos,
+          temDocumentos: qtdDocs > 0, qtdDocumentos: qtdDocs,
           dispositivo,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
         };
         // Pedido mínimo (sem os campos novos) — garante que o Master veja a
         // solicitação mesmo se as regras do banco ainda forem as antigas
-        const { documentos: _docsFora, dispositivo: _devFora, ...pedidoMinimo } = pedidoFull;
+        const { temDocumentos: _td, qtdDocumentos: _qd, dispositivo: _devFora, ...pedidoMinimo } = pedidoFull;
         try {
           await set(ref(db, `aprovacoes/${cred.user.uid}`), pedidoFull);
         } catch {
           await set(ref(db, `aprovacoes/${cred.user.uid}`), pedidoMinimo);
         }
+        setInfoEnvio('✅ Confirmando...');
 
         // Confirma que o pedido de aprovação foi GRAVADO de verdade.
         // Sem essa checagem, se o banco negasse o pedido o app liberava direto (bug).
@@ -488,6 +499,7 @@ export default function Auth({ onAuth, versao }) {
       }
     } finally {
       setLoading(false);
+      setInfoEnvio('');
     }
   };
 
@@ -656,6 +668,10 @@ export default function Auth({ onAuth, versao }) {
           {error && <div className="error" style={{fontSize: '0.8rem', marginBottom: 10}}>{error}</div>}
           {isLogin && msgRecuperacao && (
             <div style={{fontSize: '0.78rem', marginBottom: 10, color: '#34d399', lineHeight: 1.4}}>{msgRecuperacao}</div>
+          )}
+
+          {loading && infoEnvio && (
+            <div style={{fontSize: '0.8rem', color: '#c7d2fe', fontWeight: 700, textAlign: 'center', lineHeight: 1.5}}>{infoEnvio}</div>
           )}
 
           <button type="submit" className="btn-primary" disabled={loading}>

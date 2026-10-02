@@ -1332,7 +1332,7 @@ export default function Dashboard({ user }) {
         </div>
       </div>
       <div style={{textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-muted)', padding: '18px 0 8px'}}>
-        ConectaEntregas Empresas · build 2026-10-02 · pagar-pix
+        ConectaEntregas Empresas · build 2026-10-02 · pedido-leve
       </div>
     </div>
   );

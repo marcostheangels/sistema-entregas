@@ -20,9 +20,9 @@ function AguardandoAprovacao({ user, onSair }) {
   );
 }
 
-// Comprime imagem no navegador (max 1024px, JPEG 0.7) para caber no banco sem estourar
+// Comprime imagem no navegador (max 800px, JPEG 0.6) para o envio ser RAPIDO
 const processarArquivoDoc = (file) => new Promise((resolve, reject) => {
-  const MAX_BYTES = 1.5 * 1024 * 1024;
+  const MAX_BYTES = 700 * 1024;
   if (file.size > 6 * 1024 * 1024) { reject(new Error('Arquivo muito grande (máx 6MB).')); return; }
   const reader = new FileReader();
   reader.onload = () => {
@@ -34,15 +34,15 @@ const processarArquivoDoc = (file) => new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       try {
-        const MAX = 1024;
+        const MAX = 800;
         let { width: w, height: h } = img;
         const escala = Math.min(1, MAX / Math.max(w, h));
         w = Math.round(w * escala); h = Math.round(h * escala);
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        const dados = canvas.toDataURL('image/jpeg', 0.7);
-        if (dados.length > 2 * 1024 * 1024) { reject(new Error('Imagem ainda muito grande. Tente uma foto mais simples.')); return; }
+        const dados = canvas.toDataURL('image/jpeg', 0.6);
+        if (dados.length > 950 * 1024) { reject(new Error('Foto muito pesada. Tire de novo mais de perto do documento.')); return; }
         resolve({ nome: file.name, tipo: 'image/jpeg', dados });
       } catch (e) { reject(e); }
     };
@@ -135,6 +135,7 @@ function Login({ onAuth }) {
         }
         const documentos = {};
         Object.entries(docs).forEach(([k, v]) => { if (v) documentos[k] = v; });
+        const qtdDocs = Object.keys(documentos).length;
         await set(ref(db, `empresas/${cred.user.uid}`), {
           nome: nome.trim(), email,
           telefone: telefone.replace(/\D/g, ''),
@@ -145,7 +146,7 @@ function Login({ onAuth }) {
           tipo: 'empresa', nome: nome.trim(), email,
           telefone: telefone.replace(/\D/g, ''),
           endereco, cnpj: cnpj.replace(/\D/g, ''), responsavel: responsavel.trim(),
-          documentos,
+          temDocumentos: qtdDocs > 0, qtdDocumentos: qtdDocs,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
         });
         onAuth(cred.user);
@@ -278,14 +279,15 @@ function App() {
                   if (ent.exists()) { setContaErrada(true); return null; }
                   return get(ref(db, `empresas/${u.uid}`)).then(async (perf) => {
                     const p = perf.val() || {};
+                    const qtdDocs = (p.documentos && typeof p.documentos === 'object') ? Object.keys(p.documentos).length : 0;
                     const pedidoFull = {
                       tipo: 'empresa', nome: p.nome || u.email, email: p.email || u.email,
                       telefone: p.telefone || '', endereco: p.endereco || '',
                       cnpj: p.cnpj || '', responsavel: p.responsavel || '',
-                      documentos: p.documentos || {},
+                      temDocumentos: qtdDocs > 0, qtdDocumentos: qtdDocs,
                       aprovado: false, criadoPor: u.uid, criadoEm: Date.now()
                     };
-                    const { documentos: _d, cnpj: _c, responsavel: _r, ...pedidoMinimo } = pedidoFull;
+                    const { temDocumentos: _td, qtdDocumentos: _qd, cnpj: _c, responsavel: _r, ...pedidoMinimo } = pedidoFull;
                     try {
                       return await set(ref(db, `aprovacoes/${u.uid}`), pedidoFull);
                     } catch {

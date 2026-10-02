@@ -8,9 +8,9 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.29';
+const APP_VERSAO_ENTREGADOR = '1.4.30';
 // Carimbo do build (confira no rodape do painel para saber se esta na versao nova)
-const MASTER_BUILD = '2026-10-02 · aviso-ban';
+const MASTER_BUILD = '2026-10-02 · pedido-leve';
 
 // Rotulos dos documentos (entregador + empresa)
 const ROTULOS_DOCS = {
@@ -21,7 +21,15 @@ const ROTULOS_DOCS = {
   identidade: '🪪 Identidade do responsável',
   contrato: '📄 Contrato social / Alvará'
 };
-const contarDocs = (s) => (s && typeof s.documentos === 'object' ? Object.keys(s.documentos).length : 0);
+// Documentos ficam SÓ no perfil (pedido leve = chega em segundos).
+// Aqui lê do perfil, com fallback para o pedido (cadastros antigos).
+const docsDe = (s, perfisEnt, perfisEmp) => {
+  const p = s?.tipo === 'empresa' ? perfisEmp?.[s.id] : perfisEnt?.[s.id];
+  if (p?.documentos && typeof p.documentos === 'object') return p.documentos;
+  if (s?.documentos && typeof s.documentos === 'object') return s.documentos;
+  return {};
+};
+const contarDocs = (s, pe, pm) => Object.keys(docsDe(s, pe, pm)).length;
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -203,6 +211,13 @@ function PainelAprovacoes({ user }) {
   useEffect(() => {
     const unsub = onValue(ref(db, 'aprovacoes'), snap => setSolicitacoes(snap.val() || {}));
     return unsub;
+  }, []);
+
+  // Perfis das empresas (para ler os documentos anexados no cadastro)
+  const [empresasPerfis, setEmpresasPerfis] = useState({});
+  useEffect(() => {
+    const u = onValue(ref(db, 'empresas'), snap => setEmpresasPerfis(snap.val() || {}), () => {});
+    return u;
   }, []);
 
   // Dados ao vivo para a visao geral e o monitor de entregas
@@ -641,7 +656,7 @@ function PainelAprovacoes({ user }) {
   const nomeArquivo = (s) => `ficha-${String(s.nome || s.email || s.id).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'entregador'}-${String(s.id).slice(-6)}.html`;
   const gerarFichaHtml = (s, perfil) => {
     const p = perfil || {};
-    const docs = s.documentos || p.documentos || {};
+    const docs = docsDe(s, { [s.id]: p }, { [s.id]: p });
     const linhas = [
       ['Nome', s.nome || p.nome], ['E-mail', s.email || p.email], ['Telefone', s.telefone || p.telefone],
       ['CPF', s.cpf || p.cpf], ['CNPJ', s.cnpj || p.cnpj], ['Responsável', s.responsavel || p.responsavel],
@@ -668,7 +683,7 @@ function PainelAprovacoes({ user }) {
   };
   const baixarFicha = (s) => {
     try {
-      const perfil = (s.tipo === 'empresa' ? {} : entregadores[s.id]) || {};
+      const perfil = (s.tipo === 'empresa' ? empresasPerfis[s.id] : entregadores[s.id]) || {};
       const blob = new Blob([gerarFichaHtml(s, perfil)], { type: 'text/html;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -1211,13 +1226,14 @@ function PainelAprovacoes({ user }) {
               <div className="admin-item-data">Solicitado em {s.criadoEm ? new Date(s.criadoEm).toLocaleString('pt-BR') : '--'}</div>
               {s.cnpj && <div className="admin-item-data">🧾 CNPJ {s.cnpj}</div>}
               {s.responsavel && <div className="admin-item-data">👤 {s.responsavel}</div>}
-              {contarDocs(s) > 0 ? (
-                <div className="admin-item-data" style={{color: '#6ee7b7', fontWeight: 800}}>
-                  📎 {contarDocs(s)} documento(s): {Object.keys(s.documentos || {}).map(k => ROTULOS_DOCS[k] || k).join(' · ')}
-                </div>
-              ) : (
-                <div className="admin-item-data" style={{opacity: 0.6}}>📎 sem documentos anexados</div>
-              )}
+              {(() => { const docs = docsDe(s, entregadores, empresasPerfis); const n = Object.keys(docs).length;
+                return n > 0 ? (
+                  <div className="admin-item-data" style={{color: '#6ee7b7', fontWeight: 800}}>
+                    📎 {n} documento(s): {Object.keys(docs).map(k => ROTULOS_DOCS[k] || k).join(' · ')}
+                  </div>
+                ) : (
+                  <div className="admin-item-data" style={{opacity: 0.6}}>📎 sem documentos anexados</div>
+                ); })()}
             </div>
             <div className="admin-item-acoes">
               <button className="admin-btn dados" onClick={() => verDados(s)}>VER DADOS</button>
