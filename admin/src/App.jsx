@@ -815,6 +815,30 @@ function PainelAprovacoes({ user }) {
     }
   };
 
+  // RESET GERAL DE CADASTROS: apaga TODOS os entregadores e empresas —
+  // perfis, aprovados, pendentes, recusados/bloqueados, entregas, chats, GPS.
+  // Mantidos: acesso admin + configurações (taxa, preço/km, versão mínima).
+  const resetarCadastros = async () => {
+    const msg = 'RESETAR TODOS OS CADASTROS?\n\nSerão apagados PERMANENTEMENTE:\n- Todos os ENTREGADORES (aprovados, pendentes e recusados/bloqueados)\n- Todas as EMPRESAS (aprovadas, pendentes e recusadas)\n- Todas as entregas, chats, posições e rastreios\n\nMantidos: seu acesso admin e as configurações (taxa, preço/km, versão mínima).\n\nDica: faça um BACKUP antes!';
+    if (!window.confirm(msg)) return;
+    if (!window.confirm('TEM CERTEZA ABSOLUTA? Não dá para desfazer!')) return;
+    setResetando('cadastros');
+    try {
+      const snap = await get(ref(db, 'aprovacoes')).catch(() => null);
+      const uids = snap?.exists() ? Object.keys(snap.val()) : [];
+      const nos = ['entregadores', 'empresas', 'aprovacoes', 'banidos', 'banidosDispositivos',
+        'banidosCpf', 'banidosEmail', 'banidosTelefone', 'recusados', 'posicoes', 'presenca',
+        'entregas', 'rastreio', 'mensagens', 'conversas_master', 'conversas_master_emp'];
+      for (const no of nos) await remove(ref(db, no)).catch(() => {});
+      for (const uid of uids) await remove(ref(db, `avisos/${uid}`)).catch(() => {});
+      window.alert(`🧹 Cadastros resetados! ${uids.length} registro(s) de aprovação removido(s).\n\nAs contas de LOGIN continuam existindo: quem entrar refaz o cadastro e cai em análise. Para apagar logins, exclua em Firebase Console > Authentication.`);
+    } catch (e) {
+      window.alert('Erro no reset: ' + e.message + (String(e.message).includes('PERMISSION_DENIED') ? '\n\nVocê precisa estar logado com a conta fixa do administrador.' : ''));
+    } finally {
+      setResetando('');
+    }
+  };
+
   // Apaga SOMENTE quem nao esta aprovado (pendentes + orfaos), mantendo 100% dos aprovados
   const limparNaoAprovados = async () => {
     setResetando('limpeza');
@@ -1339,6 +1363,9 @@ function PainelAprovacoes({ user }) {
         <h4>⚠️ Zona de Manutenção</h4>
         <p>Apaga permanentemente os dados do grupo selecionado. Use com cuidado!</p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="admin-btn excluir" disabled={resetando !== ''} onClick={resetarCadastros}>
+            {resetando === 'cadastros' ? 'RESETANDO...' : '🧹 RESETAR CADASTROS (TODOS)'}
+          </button>
           <button className="admin-btn backup" disabled={resetando !== ''} onClick={limparNaoAprovados}>
             {resetando === 'limpeza' ? 'LIMPANDO...' : '🧹 LIMPAR NÃO APROVADOS'}
           </button>
