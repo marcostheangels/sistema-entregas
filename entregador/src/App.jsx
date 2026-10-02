@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, get, onValue, set } from 'firebase/database';
 import { auth, db } from './firebase';
@@ -8,7 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.25';
+export const APP_VERSAO = '1.4.26';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -99,9 +99,14 @@ function AguardandoAprovacao({ user, versao }) {
   );
 }
 
+// WhatsApp do suporte (mesmo da tela da empresa): o recusado pode chamar,
+// mandar mensagem e anexar arquivos (fotos dos documentos) por lá.
+const WHATS_SUPORTE = '5538998558528';
+
 // Conta BANIDA/RECUSADA pelo Master: mostra o motivo e trava tudo.
 // So volta a funcionar se o Master liberar (desbanir) no painel admin.
-function ContaBanida({ motivo, versao }) {
+function ContaBanida({ motivo, versao, email }) {
+  const textoZap = `Olá! Meu cadastro de entregador não foi aprovado (${email || ''}). Quero resolver — motivo: ${motivo || 'não informado'}.`;
   return (
     <div className="auth-wrapper">
       <div className="auth-card animate-fade" style={{textAlign: 'center'}}>
@@ -123,7 +128,25 @@ function ContaBanida({ motivo, versao }) {
             </p>
           )}
         </div>
-        <button className="btn-primary" style={{marginTop: 20}} onClick={() => signOut(auth)}>SAIR</button>
+        <a
+          href={`https://wa.me/${WHATS_SUPORTE}?text=${encodeURIComponent(textoZap)}`}
+          target="_blank" rel="noreferrer"
+          style={{display: 'block', background: '#22c55e', color: '#fff', borderRadius: 12,
+                  padding: '14px', fontWeight: 800, fontSize: '0.9rem', textDecoration: 'none', marginTop: 12}}
+        >
+          💬 FALAR NO WHATSAPP
+        </a>
+        <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5}}>
+          Chame no WhatsApp para recorrer: dá para mandar mensagem e anexar fotos/arquivos por lá.
+        </div>
+        <button
+          onClick={() => window.location.reload()}
+          style={{background: 'transparent', color: '#94a3b8', border: '1px solid #334155',
+                  borderRadius: 10, padding: '10px 18px', fontWeight: 700, cursor: 'pointer', marginTop: 12, width: '100%'}}
+        >
+          🔄 JÁ FUI LIBERADO — VERIFICAR
+        </button>
+        <button className="btn-primary" style={{marginTop: 12}} onClick={() => signOut(auth)}>SAIR</button>
         {versao && (
           <div style={{textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 14}}>
             ConectaEntregas Entregador · v{versao}
@@ -344,18 +367,15 @@ function App() {
     }).catch(() => {});
   }, [user, aprovado, temPerfil, perfilCarregando, dadosAprov]);
 
-  // Le o ban do Master (motivo exibido na tela; trava tudo, ate refazer cadastro)
+  // Le o ban do Master EM TEMPO REAL (motivo exibido na tela; trava tudo).
+  // Quando o Master DESBANE, limpa sozinho aqui mesmo — sem precisar sair/entrar.
   useEffect(() => {
     if (!user) { setBanInfo(null); return; }
-    let vivo = true;
-    Promise.all([
-      get(ref(db, `banidos/${user.uid}`)).catch(() => ({ exists: () => false, val: () => null })),
-      get(ref(db, `recusados/${user.uid}`)).catch(() => ({ exists: () => false, val: () => null }))
-    ]).then(([b, r]) => {
-      if (!vivo) return;
-      setBanInfo(b.exists() ? b.val() : (r.exists() ? r.val() : null));
-    }).catch(() => {});
-    return () => { vivo = false; };
+    const calc = (b, r) => setBanInfo(b?.exists() ? b.val() : (r?.exists() ? r.val() : null));
+    let snapB = null, snapR = null;
+    const unsubB = onValue(ref(db, `banidos/${user.uid}`), s => { snapB = s; calc(snapB, snapR); }, () => {});
+    const unsubR = onValue(ref(db, `recusados/${user.uid}`), s => { snapR = s; calc(snapB, snapR); }, () => {});
+    return () => { unsubB(); unsubR(); };
   }, [user]);
 
   // Recupera cadastro ORFAO: tem perfil mas o pedido de aprovacao nao existe
@@ -363,17 +383,23 @@ function App() {
   // Recria o pedido a partir do perfil — com os documentos — para o Master ver.
   // So vale para perfil RECENTE (7 dias): conta antiga sem registro segue liberada.
   // Cadastro BANIDO/RECUSADO pelo Master nunca e recriado.
+  // (Trava por ref + timeout: a tela de "enviando" nunca fica presa.)
+  const criandoRef = useRef(false);
   useEffect(() => {
-    if (!user || aprovado !== null || perfilCarregando || !temPerfil || criandoSolicitacao || erroSolicitacao || banInfo) return;
+    if (!user || aprovado !== null || perfilCarregando || !temPerfil || criandoRef.current || erroSolicitacao || banInfo) return;
+    criandoRef.current = true;
+    setCriandoSolicitacao(true);
     let cancelado = false;
+    const comTimeout = (promessa, ms) => Promise.race([
+      promessa, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
+    ]);
     (async () => {
-      setCriandoSolicitacao(true);
       try {
-        const [snapPerfil, snapRec, snapBan] = await Promise.all([
+        const [snapPerfil, snapRec, snapBan] = await comTimeout(Promise.all([
           get(ref(db, `entregadores/${user.uid}`)),
           get(ref(db, `recusados/${user.uid}`)).catch(() => ({ val: () => null })),
           get(ref(db, `banidos/${user.uid}`)).catch(() => ({ val: () => null }))
-        ]);
+        ]), 20000);
         if (cancelado) return;
         if (snapRec.val() || snapBan.val()) { setErroSolicitacao('recusado'); return; }
         const p = snapPerfil.val() || {};
@@ -395,19 +421,20 @@ function App() {
         };
         const { documentos: _d, dispositivo: _dev, ...pedidoMinimo } = pedidoFull;
         try {
-          await set(ref(db, `aprovacoes/${user.uid}`), pedidoFull);
+          await comTimeout(set(ref(db, `aprovacoes/${user.uid}`), pedidoFull), 20000);
         } catch {
-          await set(ref(db, `aprovacoes/${user.uid}`), pedidoMinimo);
+          await comTimeout(set(ref(db, `aprovacoes/${user.uid}`), pedidoMinimo), 20000);
         }
         // O listener de aprovacoes vai virar `false` sozinho e mostrar "em analise"
       } catch {
         if (!cancelado) setErroSolicitacao('falha');
       } finally {
-        if (!cancelado) setCriandoSolicitacao(false);
+        criandoRef.current = false;
+        setCriandoSolicitacao(false);
       }
     })();
     return () => { cancelado = true; };
-  }, [user, aprovado, temPerfil, perfilCarregando, criandoSolicitacao, erroSolicitacao, banInfo]);
+  }, [user, aprovado, temPerfil, perfilCarregando, erroSolicitacao, banInfo]);
 
   if (loading) return conexaoFalhou ? (
     <div className="loading" style={{textAlign:'center', padding:'40px 24px'}}>
@@ -429,7 +456,7 @@ function App() {
   if (versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
 
   // Banido/recusado pelo Master: mostra o motivo e trava (vale p/ qualquer conta nova que ele tentar criar)
-  if (user && banInfo) return <ContaBanida motivo={banInfo.motivo} versao={APP_VERSAO} />;
+  if (user && banInfo) return <ContaBanida motivo={banInfo.motivo} versao={APP_VERSAO} email={user.email} />;
 
   // Login cruzado bloqueado: conta de empresa (ou outro tipo) NAO entra no app do entregador
   if (user && tipoConta && tipoConta !== 'entregador') return <ContaIncorreta user={user} tipo={tipoConta} versao={APP_VERSAO} />;
