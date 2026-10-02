@@ -713,10 +713,9 @@ function ModalPagarPix({ entrega, entregador, onFechar, onPago }) {
   );
 }
 
-// ===== TELA GRANDE DE PAGAMENTO (trava o painel até pagar o motoboy) =====
-// Abre sozinha quando há entrega concluída sem pagamento (ou contestada).
-// Só fecha quando a empresa paga — e o "PAGO CONFIRMADO" só vem com o OK do motoboy.
-function TelaPagamentoBloqueio({ entrega, entregador, totalFila }) {
+// ===== MODAL DE PAGAMENTO (não trava o painel: a empresa segue criando pedidos) =====
+// Lista de pendentes fica no topo com botão PAGAR; o "PAGO CONFIRMADO" vem com o OK do motoboy.
+function TelaPagamentoBloqueio({ entrega, entregador, totalFila, onFechar }) {
   const [modo, setModo] = useState('escolha'); // 'escolha' | 'pix'
   const [qrUrl, setQrUrl] = useState('');
   const [brcode, setBrcode] = useState('');
@@ -778,12 +777,12 @@ function TelaPagamentoBloqueio({ entrega, entregador, totalFila }) {
   };
 
   return (
-    <div style={{position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(2, 6, 23, 0.97)', display: 'flex',
+    <div style={{position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(2, 6, 23, 0.85)', display: 'flex',
                  alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto'}}>
       <div style={{background: '#fff', color: '#111', borderRadius: 20, padding: 28, width: '100%', maxWidth: 480,
                    textAlign: 'center', border: '3px solid #16a34a'}}>
         <div style={{fontSize: '3rem'}}>💰</div>
-        <h1 style={{margin: '4px 0', fontSize: '1.4rem'}}>PAGUE O MOTOBOY PARA LIBERAR</h1>
+        <h1 style={{margin: '4px 0', fontSize: '1.4rem'}}>PAGAR MOTOBOY</h1>
         <div style={{fontSize: '0.85rem', color: '#475569', marginBottom: 4}}>
           {totalFila > 1 ? `${totalFila} pagamentos pendentes — este é o 1º` : 'Existe 1 pagamento pendente'}
         </div>
@@ -823,7 +822,7 @@ function TelaPagamentoBloqueio({ entrega, entregador, totalFila }) {
               {enviando ? 'REGISTRANDO...' : '✅ PAGUEI POR OUTRO MEIO (DINHEIRO/CARTÃO)'}
             </button>
             <div style={{fontSize: '0.72rem', color: '#64748b', marginTop: 10, lineHeight: 1.5}}>
-              🔒 O painel libera após o pagamento — e o <strong>PAGO CONFIRMADO</strong> só aparece com o OK do motoboy no app dele.
+              O <strong>PAGO CONFIRMADO</strong> aparece com o OK do motoboy no app dele. Você pode fechar e continuar criando pedidos.
             </div>
           </>
         ) : (
@@ -853,6 +852,12 @@ function TelaPagamentoBloqueio({ entrega, entregador, totalFila }) {
           </>
         )}
         {erro && <div style={{fontSize: '0.8rem', color: '#dc2626', marginTop: 8, fontWeight: 700}}>{erro}</div>}
+        {onFechar && (
+          <button onClick={onFechar}
+            style={{width: '100%', marginTop: 10, background: 'transparent', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 10, padding: 10, fontWeight: 700, cursor: 'pointer'}}>
+            FECHAR (pago depois)
+          </button>
+        )}
       </div>
     </div>
   );
@@ -907,6 +912,7 @@ export default function Dashboard({ user }) {
   const [statusFiltro, setStatusFiltro] = useState('pendente');
   const [salvando, setSalvando] = useState(false);
   const [pagandoPix, setPagandoPix] = useState(null); // entrega aberta no modal de pagamento
+  const [pagandoFila, setPagandoFila] = useState(null); // entrega aberta no modal grande (pendentes)
 
   // Fila de pagamentos: entrega concluída sem pagamento (ou contestada) TRAVA o painel
   const filaPagamento = useMemo(() => entregas
@@ -1145,12 +1151,13 @@ export default function Dashboard({ user }) {
         />
       )}
 
-      {/* Tela grande: pagamento pendente trava o painel até pagar */}
-      {filaPagamento.length > 0 && !pagandoPix && (
+      {/* Modal grande de pagamento (pendentes) — fecha e o painel segue livre */}
+      {pagandoFila && (
         <TelaPagamentoBloqueio
-          entrega={filaPagamento[0]}
-          entregador={entregadores[filaPagamento[0].entregadorId] || {}}
+          entrega={entregas.find(x => x.id === pagandoFila.id) || pagandoFila}
+          entregador={entregadores[(entregas.find(x => x.id === pagandoFila.id) || pagandoFila).entregadorId] || {}}
           totalFila={filaPagamento.length}
+          onFechar={() => setPagandoFila(null)}
         />
       )}
 
@@ -1215,6 +1222,35 @@ export default function Dashboard({ user }) {
       >
         <FaWhatsapp size={30} color="#fff" />
       </a>
+
+      {/* Pagamentos pendentes: paga quando quiser, sem travar novos pedidos */}
+      {filaPagamento.length > 0 && (
+        <div style={{background: '#fff7ed', border: '2px solid #f59e0b', borderRadius: 14, padding: '12px 14px', margin: '0 0 12px'}}>
+          <div style={{fontWeight: 900, fontSize: '0.9rem', color: '#92400e', marginBottom: 8}}>
+            💰 PAGAMENTOS PENDENTES ({filaPagamento.length}) — o painel segue livre para novos pedidos
+          </div>
+          {filaPagamento.slice(0, 5).map(e => {
+            const liq = Math.round((parseFloat(e.valor || 0) - parseFloat(e.taxaPlataforma || 0)) * 100) / 100;
+            return (
+              <div key={e.id} style={{display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #fed7aa',
+                                     borderRadius: 10, padding: '8px 10px', marginBottom: 6, flexWrap: 'wrap'}}>
+                <div style={{flex: 1, minWidth: 160, fontSize: '0.8rem', color: '#431407'}}>
+                  <strong>{entregadores[e.entregadorId]?.nome || e.entregadorNome || 'Motoboy'}</strong>
+                  {' · '}#ORDEM-{e.id.slice(-4).toUpperCase()} · <strong>R$ {liq.toFixed(2)}</strong>
+                  {e.pixStatus === 'contestado' && <span style={{color: '#dc2626', fontWeight: 800}}> · ❌ NÃO RECEBIDO</span>}
+                </div>
+                <button onClick={() => setPagandoFila(e)}
+                  style={{background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer'}}>
+                  💰 PAGAR
+                </button>
+              </div>
+            );
+          })}
+          {filaPagamento.length > 5 && (
+            <div style={{fontSize: '0.72rem', color: '#92400e'}}>+ {filaPagamento.length - 5} outros na lista de pedidos (abaixo).</div>
+          )}
+        </div>
+      )}
 
       <div className="stats-grid">
         <div className={`stat-card clickable ${statusFiltro === 'pendente' ? 'active' : ''}`} onClick={() => setStatusFiltro('pendente')}>
