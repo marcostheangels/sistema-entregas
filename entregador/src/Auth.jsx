@@ -14,6 +14,47 @@ const verificarTipoConta = async (uid) => {
   return null;
 };
 
+// Comprime imagem no navegador (max 1024px, JPEG 0.7) para caber no banco sem estourar
+const processarArquivoDoc = (file) => new Promise((resolve, reject) => {
+  const MAX_BYTES = 1.5 * 1024 * 1024;
+  if (file.size > 6 * 1024 * 1024) { reject(new Error('Arquivo muito grande (máx 6MB).')); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    // PDF ou não-imagem: salva direto como base64 (se couber)
+    if (!file.type.startsWith('image/')) {
+      if (file.size > MAX_BYTES) { reject(new Error('PDF muito grande (máx 1,5MB). Tire um print/foto.')); return; }
+      resolve({ nome: file.name, tipo: file.type || 'application/pdf', dados: reader.result });
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const MAX = 1024;
+        let { width: w, height: h } = img;
+        const escala = Math.min(1, MAX / Math.max(w, h));
+        w = Math.round(w * escala); h = Math.round(h * escala);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const dados = canvas.toDataURL('image/jpeg', 0.7);
+        if (dados.length > 2 * 1024 * 1024) { reject(new Error('Imagem ainda muito grande. Tente uma foto mais simples.')); return; }
+        resolve({ nome: file.name, tipo: 'image/jpeg', dados });
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+    img.src = reader.result;
+  };
+  reader.onerror = () => reject(new Error('Falha ao ler arquivo.'));
+  reader.readAsDataURL(file);
+});
+
+const ROTULOS_DOCS_ENTREGADOR = {
+  cnh: '🪪 CNH',
+  docMoto: '🏍️ Documento da moto (CRLV)',
+  comprovante: '🏠 Comprovante de residência',
+  antecedentes: '📋 Antecedentes criminais'
+};
+
 export default function Auth({ onAuth, versao }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -25,8 +66,21 @@ export default function Auth({ onAuth, versao }) {
   const [veiculo, setVeiculo] = useState('');
   const [placa, setPlaca] = useState('');
   const [endereco, setEndereco] = useState('');
+  const [docs, setDocs] = useState({ cnh: null, docMoto: null, comprovante: null, antecedentes: null });
+  const [erroDoc, setErroDoc] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const escolherDoc = async (chave, file) => {
+    if (!file) return;
+    setErroDoc('');
+    try {
+      const doc = await processarArquivoDoc(file);
+      setDocs(d => ({ ...d, [chave]: doc }));
+    } catch (e) {
+      setErroDoc('❌ ' + (e.message || 'Erro no arquivo.'));
+    }
+  };
 
   const formatarCpf = (valor) => {
     const nums = valor.replace(/\D/g, '');
@@ -88,6 +142,7 @@ export default function Auth({ onAuth, versao }) {
               veiculo: d.veiculo || '',
               placa: (d.placa || '').toUpperCase(),
               endereco: d.endereco || '',
+              documentos: d.documentos || {},
               status: 'disponivel',
               createdAt: Date.now()
             });
@@ -125,6 +180,10 @@ export default function Auth({ onAuth, versao }) {
 
         await updateProfile(cred.user, { displayName: nome });
 
+        // Documentos anexados (fotos comprimidas em base64 — o Master vê no painel)
+        const documentos = {};
+        Object.entries(docs).forEach(([k, v]) => { if (v) documentos[k] = v; });
+
         await set(ref(db, `entregadores/${cred.user.uid}`), {
           nome,
           email,
@@ -133,6 +192,7 @@ export default function Auth({ onAuth, versao }) {
           veiculo,
           placa: placa.toUpperCase(),
           endereco,
+          documentos,
           status: 'disponivel',
           createdAt: Date.now()
         });
@@ -145,6 +205,7 @@ export default function Auth({ onAuth, versao }) {
           veiculo,
           placa: placa.toUpperCase(),
           endereco,
+          documentos,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
         });
 
@@ -255,6 +316,37 @@ export default function Auth({ onAuth, versao }) {
                   value={endereco}
                   onChange={(e) => setEndereco(e.target.value)}
                 />
+              </div>
+              <div style={{background: 'rgba(99,102,241,0.08)', border: '1px dashed rgba(99,102,241,0.5)', borderRadius: 12, padding: 12}}>
+                <div style={{fontSize: '0.78rem', fontWeight: 800, color: '#c7d2fe', marginBottom: 4}}>📎 DOCUMENTOS (foto ou PDF — máx 6MB)</div>
+                <div style={{fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5}}>
+                  Anexe para agilizar sua aprovação. Pode concluir sem eles e enviar depois com o Master.
+                </div>
+                {Object.entries(ROTULOS_DOCS_ENTREGADOR).map(([chave, rotulo]) => (
+                  <div key={chave} style={{marginBottom: 10}}>
+                    <label style={{display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4}}>
+                      {rotulo} {docs[chave] ? '✅' : ''}
+                    </label>
+                    <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                      <label style={{flex: 1, display: 'block', textAlign: 'center', background: docs[chave] ? 'rgba(16,185,129,0.15)' : '#0f172a',
+                                      border: docs[chave] ? '1px solid #10b981' : '1px solid #334155',
+                                      color: docs[chave] ? '#6ee7b7' : '#cbd5e1',
+                                      borderRadius: 10, padding: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'}}>
+                        {docs[chave] ? `📄 ${String(docs[chave].nome).slice(0, 22)} — trocar` : '📤 Escolher arquivo / tirar foto'}
+                        <input type="file" accept="image/*,.pdf" capture="environment" style={{display: 'none'}}
+                          onChange={(e) => { escolherDoc(chave, e.target.files?.[0]); e.target.value = ''; }} />
+                      </label>
+                      {docs[chave] && (
+                        <button type="button" onClick={() => setDocs(d => ({ ...d, [chave]: null }))}
+                          style={{background: 'transparent', border: '1px solid #475569', color: '#94a3b8', borderRadius: 8, padding: '8px 10px', cursor: 'pointer'}}>✕</button>
+                      )}
+                    </div>
+                    {docs[chave]?.tipo?.startsWith('image/') && (
+                      <img src={docs[chave].dados} alt={rotulo} style={{width: '100%', maxHeight: 140, objectFit: 'cover', borderRadius: 8, marginTop: 6, border: '1px solid #334155'}} />
+                    )}
+                  </div>
+                ))}
+                {erroDoc && <div style={{fontSize: '0.75rem', color: '#f87171'}}>{erroDoc}</div>}
               </div>
             </>
           )}

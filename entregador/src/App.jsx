@@ -8,7 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.22';
+export const APP_VERSAO = '1.4.23';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -293,6 +293,7 @@ function App() {
       veiculo: dadosAprov.veiculo || '',
       placa: (dadosAprov.placa || '').toUpperCase(),
       endereco: dadosAprov.endereco || '',
+      documentos: dadosAprov.documentos || {},
       status: 'disponivel',
       createdAt: Date.now()
     }).catch(() => {});

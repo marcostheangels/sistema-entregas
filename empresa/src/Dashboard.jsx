@@ -622,6 +622,24 @@ export default function Dashboard({ user }) {
   const [form, setForm] = useState({ origem: '', destino: '', descricao: '', valor: '', pagamento: 'pix', pixChave: '', pedirDevolucao: false });
   const [coords, setCoords] = useState({ origem: null, destino: null });
   const [configTaxa, setConfigTaxa] = useState({ porEntrega: 0, percentual: 0 });
+  // Preço sugerido por km (definido pelo Master em config/precoKm; empresa decide o valor final)
+  const [configPrecoKm, setConfigPrecoKm] = useState({ porKm: 3, minimo: 8 });
+
+  // Distância estimada (linha reta) + preço sugerido — atualiza ao digitar os 2 endereços
+  const distanciaEstimadaKm = useMemo(() => {
+    if (!coords.origem || !coords.destino) return null;
+    try {
+      const km = haversineKmEmp(coords.origem, coords.destino);
+      return Math.round(km * 10) / 10;
+    } catch { return null; }
+  }, [coords]);
+  const precoSugerido = useMemo(() => {
+    if (distanciaEstimadaKm == null) return null;
+    const porKm = parseFloat(configPrecoKm.porKm) || 0;
+    const minimo = parseFloat(configPrecoKm.minimo) || 0;
+    if (!porKm) return null;
+    return Math.max(minimo, Math.round(distanciaEstimadaKm * porKm * 100) / 100);
+  }, [distanciaEstimadaKm, configPrecoKm]);
   const [statusFiltro, setStatusFiltro] = useState('pendente');
   const [salvando, setSalvando] = useState(false);
 
@@ -698,7 +716,8 @@ export default function Dashboard({ user }) {
     const unsubEntregadores = onValue(ref(db, 'entregadores'), snap => setEntregadores(snap.val() || {}));
     const unsubPosicoes = onValue(ref(db, 'posicoes'), snap => setPosicoes(snap.val() || {}));
     const unsubConfig = onValue(ref(db, 'config/taxa'), snap => setConfigTaxa(snap.val() || { porEntrega: 0, percentual: 0 }));
-    return () => { unsubPerfil(); unsubEntregas(); unsubEntregadores(); unsubPosicoes(); unsubConfig(); };
+    const unsubPrecoKm = onValue(ref(db, 'config/precoKm'), snap => setConfigPrecoKm(snap.val() || { porKm: 3, minimo: 8 }));
+    return () => { unsubPerfil(); unsubEntregas(); unsubEntregadores(); unsubPosicoes(); unsubConfig(); unsubPrecoKm(); };
   }, [user.uid]);
 
   // Registros antigos podem ter ficado sem nome: completa a partir da aprovacao
@@ -1034,6 +1053,38 @@ export default function Dashboard({ user }) {
               <GeoSearch label="📍 Ponto de Coleta" placeholder="Rua, Número, Bairro" value={form.origem} onChange={v=>setForm({...form, origem:v})} onCoords={c=>setCoords({...coords, origem:c})} />
               <GeoSearch label="🏁 Destino Final" placeholder="Rua, Número, Bairro" value={form.destino} onChange={v=>setForm({...form, destino:v})} onCoords={c=>setCoords({...coords, destino:c})} />
 
+              {/* Cálculo automático: distância + preço sugerido (valor final é da empresa) */}
+              <div style={{background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.35)', borderRadius: 10, padding: '12px', marginBottom: '1rem'}}>
+                <div style={{fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)', marginBottom: 6}}>📏 DISTÂNCIA E PREÇO SUGERIDO</div>
+                {distanciaEstimadaKm != null ? (
+                  <>
+                    <div style={{fontSize: '0.85rem', marginBottom: 4}}>
+                      🛣️ Quilometragem total: <strong>{distanciaEstimadaKm} km</strong>
+                      <span style={{color: 'var(--text-muted)', fontSize: '0.7rem'}}> (linha reta coleta → destino)</span>
+                    </div>
+                    {precoSugerido != null ? (
+                      <>
+                        <div style={{fontSize: '0.85rem', marginBottom: 8}}>
+                          💡 Preço sugerido: <strong style={{color: 'var(--success)', fontSize: '1rem'}}>R$ {precoSugerido.toFixed(2)}</strong>
+                          <span style={{color: 'var(--text-muted)', fontSize: '0.7rem'}}> (R$ {parseFloat(configPrecoKm.porKm).toFixed(2)}/km · mínimo R$ {parseFloat(configPrecoKm.minimo).toFixed(2)})</span>
+                        </div>
+                        <button type="button" onClick={() => setForm(f => ({ ...f, valor: String(precoSugerido.toFixed(2)) }))}
+                          style={{width: '100%', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 8, padding: '9px', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer'}}>
+                          ✅ USAR VALOR SUGERIDO
+                        </button>
+                        <div style={{fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 6}}>⚠️ Sugestão automática — o valor final quem define é você no campo abaixo.</div>
+                      </>
+                    ) : (
+                      <div style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>Tabela de preço/km ainda não configurada.</div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>
+                    👆 Selecione a <strong>coleta</strong> e o <strong>destino</strong> nas sugestões acima para ver a quilometragem e o preço sugerido.
+                  </div>
+                )}
+              </div>
+
               <div className="form-group">
                 <label className="form-label">📝 O que será entregue?</label>
                 <input type="text" placeholder="Ex: 2 Pizzas G" value={form.descricao} onChange={e=>setForm({...form, descricao:e.target.value})} required className="input-field" />
@@ -1134,7 +1185,7 @@ export default function Dashboard({ user }) {
         </div>
       </div>
       <div style={{textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-muted)', padding: '18px 0 8px'}}>
-        ConectaEntregas Empresas · build 2026-09-15
+        ConectaEntregas Empresas · build 2026-10-02 · preco-km
       </div>
     </div>
   );

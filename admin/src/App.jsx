@@ -8,9 +8,20 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.22';
+const APP_VERSAO_ENTREGADOR = '1.4.23';
 // Carimbo do build (confira no rodape do painel para saber se esta na versao nova)
-const MASTER_BUILD = '2026-09-15 · diag3';
+const MASTER_BUILD = '2026-10-02 · docs1';
+
+// Rotulos dos documentos (entregador + empresa)
+const ROTULOS_DOCS = {
+  cnh: '🪪 CNH',
+  docMoto: '🏍️ Documento da moto (CRLV)',
+  comprovante: '🏠 Comprovante de residência/endereço',
+  antecedentes: '📋 Antecedentes criminais',
+  identidade: '🪪 Identidade do responsável',
+  contrato: '📄 Contrato social / Alvará'
+};
+const contarDocs = (s) => (s && typeof s.documentos === 'object' ? Object.keys(s.documentos).length : 0);
 
 function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -269,6 +280,25 @@ function PainelAprovacoes({ user }) {
     } catch (e) { setTaxaMsg('❌ ' + e.message); }
   };
 
+  // ===== PREÇO SUGERIDO POR KM (a empresa vê a sugestão, mas o valor final é dela) =====
+  const [configPrecoKm, setConfigPrecoKm] = useState({ porKm: 3, minimo: 8 });
+  const [precoKmMsg, setPrecoKmMsg] = useState('');
+  useEffect(() => {
+    const u = onValue(ref(db, 'config/precoKm'), snap => setConfigPrecoKm(snap.val() || { porKm: 3, minimo: 8 }));
+    return u;
+  }, []);
+
+  const salvarPrecoKm = async () => {
+    try {
+      await set(ref(db, 'config/precoKm'), {
+        porKm: parseFloat(configPrecoKm.porKm) || 0,
+        minimo: parseFloat(configPrecoKm.minimo) || 0
+      });
+      setPrecoKmMsg('✅ Tabela salva — as empresas já veem o novo sugerido.');
+      setTimeout(() => setPrecoKmMsg(''), 4000);
+    } catch (e) { setPrecoKmMsg('❌ ' + e.message); }
+  };
+
   const taxaNova = (e) => Math.round((((configTaxa.porEntrega || 0)) + (parseFloat(e.valor || 0)) * ((configTaxa.percentual || 0) / 100)) * 100) / 100;
   // Receita da plataforma: prioriza a taxa gravada na entrega; antigas sem taxa usam a atual
   const taxaDe = (e) => (e.taxaPlataforma != null ? parseFloat(e.taxaPlataforma) : taxaNova(e));
@@ -485,6 +515,7 @@ function PainelAprovacoes({ user }) {
           veiculo: s.veiculo || p.veiculo || '',
           placa: s.placa || p.placa || '',
           endereco: s.endereco || p.endereco || '',
+          documentos: s.documentos || p.documentos || {},
           status: p.status || 'disponivel',
           createdAt: p.createdAt || Date.now()
         });
@@ -496,6 +527,9 @@ function PainelAprovacoes({ user }) {
           email: s.email || p.email || '',
           telefone: s.telefone || p.telefone || '',
           endereco: s.endereco || p.endereco || '',
+          cnpj: s.cnpj || p.cnpj || '',
+          responsavel: s.responsavel || p.responsavel || '',
+          documentos: s.documentos || p.documentos || {},
           createdAt: p.createdAt || Date.now()
         });
       }
@@ -831,6 +865,23 @@ function PainelAprovacoes({ user }) {
 
       <div className="admin-backup">
         <div className="admin-backup-info">
+          <strong>🛣️ Preço sugerido por KM (painel da empresa)</strong>
+          <span>A empresa digita coleta + destino, vê a quilometragem e o preço sugerido — mas o valor final é sempre ela quem coloca. Ex.: R$ 3,00/km, mínimo R$ 8,00 = 2 km sugere R$ 8,00; 5 km sugere R$ 15,00.</span>
+          {precoKmMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{precoKmMsg}</span>}
+        </div>
+        <div className="admin-backup-botoes" style={{alignItems: 'center'}}>
+          <label style={{fontSize: '0.72rem', color: '#94a3b8'}}>R$/km
+            <input type="number" step="0.10" min="0" value={configPrecoKm.porKm} onChange={e => setConfigPrecoKm(t => ({ ...t, porKm: e.target.value }))} style={{width: 76, marginLeft: 6, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+          </label>
+          <label style={{fontSize: '0.72rem', color: '#94a3b8'}}>Mínimo R$
+            <input type="number" step="0.50" min="0" value={configPrecoKm.minimo} onChange={e => setConfigPrecoKm(t => ({ ...t, minimo: e.target.value }))} style={{width: 76, marginLeft: 6, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+          </label>
+          <button className="admin-btn backup" onClick={salvarPrecoKm}>SALVAR TABELA</button>
+        </div>
+      </div>
+
+      <div className="admin-backup">
+        <div className="admin-backup-info">
           <strong>📱 App do entregador — v{APP_VERSAO_ENTREGADOR} (atual)</strong>
           <span>Defina a versão mínima: quem estiver com APK antigo vê a tela de bloqueio com botão para baixar o novo (hospedado aqui no site). Deixe vazio para desativar.</span>
           {versaoMsg && <span style={{color: '#fbbf24', marginTop: 4}}>{versaoMsg}</span>}
@@ -965,6 +1016,15 @@ function PainelAprovacoes({ user }) {
               <div className="admin-item-nome">{s.nome || 'Sem nome'}</div>
               <div className="admin-item-email">{s.email}</div>
               <div className="admin-item-data">Solicitado em {s.criadoEm ? new Date(s.criadoEm).toLocaleString('pt-BR') : '--'}</div>
+              {s.cnpj && <div className="admin-item-data">🧾 CNPJ {s.cnpj}</div>}
+              {s.responsavel && <div className="admin-item-data">👤 {s.responsavel}</div>}
+              {contarDocs(s) > 0 ? (
+                <div className="admin-item-data" style={{color: '#6ee7b7', fontWeight: 800}}>
+                  📎 {contarDocs(s)} documento(s): {Object.keys(s.documentos || {}).map(k => ROTULOS_DOCS[k] || k).join(' · ')}
+                </div>
+              ) : (
+                <div className="admin-item-data" style={{opacity: 0.6}}>📎 sem documentos anexados</div>
+              )}
             </div>
             <div className="admin-item-acoes">
               <button className="admin-btn dados" onClick={() => verDados(s)}>VER DADOS</button>
@@ -1111,15 +1171,42 @@ function PainelAprovacoes({ user }) {
               <h3>{detalhes.tipo === 'empresa' ? '🏢' : '🛵'} {detalhes.nome || 'Cadastro'} <small style={{color:'#94a3b8', fontWeight:400}}>— edição master</small></h3>
               <button className="admin-btn excluir" onClick={() => setDetalhes(null)}>FECHAR</button>
             </div>
+            {/* Documentos anexados no cadastro (foto/PDF) */}
+            {detalhes.dados?.documentos && typeof detalhes.dados.documentos === 'object' && Object.keys(detalhes.dados.documentos).length > 0 && (
+              <div style={{marginBottom: 14, background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.35)', borderRadius: 10, padding: 10}}>
+                <div style={{fontSize: '0.75rem', fontWeight: 900, color: '#6ee7b7', marginBottom: 8}}>
+                  📎 DOCUMENTOS ANEXADOS ({Object.keys(detalhes.dados.documentos).length})
+                </div>
+                {Object.entries(detalhes.dados.documentos).map(([chave, doc]) => (
+                  <div key={chave} style={{background: 'rgba(2,6,23,0.6)', border: '1px solid #334155', borderRadius: 8, padding: 8, marginBottom: 8}}>
+                    <div style={{fontSize: '0.78rem', fontWeight: 800, color: '#e2e8f0', marginBottom: 6}}>
+                      {ROTULOS_DOCS[chave] || chave} <span style={{fontWeight: 400, color: '#94a3b8', fontSize: '0.68rem'}}>· {doc?.nome || ''}</span>
+                    </div>
+                    {String(doc?.tipo || '').startsWith('image/') && doc?.dados ? (
+                      <a href={doc.dados} target="_blank" rel="noreferrer" title="Clique para ampliar">
+                        <img src={doc.dados} alt={chave} style={{width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 6, background: '#000'}} />
+                      </a>
+                    ) : doc?.dados ? (
+                      <a href={doc.dados} download={doc?.nome || `${chave}.pdf`}
+                        style={{display: 'inline-block', background: '#6366f1', color: '#fff', borderRadius: 8, padding: '9px 14px', fontWeight: 800, fontSize: '0.75rem', textDecoration: 'none'}}>
+                        ⬇️ ABRIR / BAIXAR {String(doc?.nome || 'documento').slice(0, 30)}
+                      </a>
+                    ) : (
+                      <span style={{fontSize: '0.75rem', color: '#f87171'}}>Arquivo vazio.</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="admin-dados">
-              {Object.entries(detalhes.dados || {}).map(([chave, valor]) => (
+              {Object.entries(detalhes.dados || {}).filter(([chave]) => chave !== 'documentos').map(([chave, valor]) => (
                 <div key={chave} className="admin-dado-linha">
                   <span className="admin-dado-chave">{chave}</span>
                   {typeof valor === 'object' && valor !== null ? (
                     <span className="admin-dado-valor">{JSON.stringify(valor)}</span>
                   ) : (
                     <input
-                      value={String(valor)}
+                      value={String(valor ?? '')}
                       onChange={ev => setDetalhes(d => ({ ...d, dados: { ...d.dados, [chave]: ev.target.value } }))}
                       style={{flex: 1, background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '6px 8px', color: '#f8fafc', fontSize: '0.8rem'}}
                     />

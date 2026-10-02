@@ -20,6 +20,55 @@ function AguardandoAprovacao({ user, onSair }) {
   );
 }
 
+// Comprime imagem no navegador (max 1024px, JPEG 0.7) para caber no banco sem estourar
+const processarArquivoDoc = (file) => new Promise((resolve, reject) => {
+  const MAX_BYTES = 1.5 * 1024 * 1024;
+  if (file.size > 6 * 1024 * 1024) { reject(new Error('Arquivo muito grande (máx 6MB).')); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (!file.type.startsWith('image/')) {
+      if (file.size > MAX_BYTES) { reject(new Error('PDF muito grande (máx 1,5MB). Tire um print/foto.')); return; }
+      resolve({ nome: file.name, tipo: file.type || 'application/pdf', dados: reader.result });
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const MAX = 1024;
+        let { width: w, height: h } = img;
+        const escala = Math.min(1, MAX / Math.max(w, h));
+        w = Math.round(w * escala); h = Math.round(h * escala);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const dados = canvas.toDataURL('image/jpeg', 0.7);
+        if (dados.length > 2 * 1024 * 1024) { reject(new Error('Imagem ainda muito grande. Tente uma foto mais simples.')); return; }
+        resolve({ nome: file.name, tipo: 'image/jpeg', dados });
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+    img.src = reader.result;
+  };
+  reader.onerror = () => reject(new Error('Falha ao ler arquivo.'));
+  reader.readAsDataURL(file);
+});
+
+const ROTULOS_DOCS_EMPRESA = {
+  cnpj: '🧾 Cartão CNPJ / Comprovante CNPJ',
+  identidade: '🪪 Identidade do responsável (RG/CNH)',
+  comprovante: '🏠 Comprovante de endereço da empresa',
+  contrato: '📄 Contrato social / Alvará (opcional)'
+};
+
+const formatarCnpj = (v) => {
+  const n = v.replace(/\D/g, '').slice(0, 14);
+  if (n.length <= 2) return n;
+  if (n.length <= 5) return `${n.slice(0,2)}.${n.slice(2)}`;
+  if (n.length <= 8) return `${n.slice(0,2)}.${n.slice(2,5)}.${n.slice(5)}`;
+  if (n.length <= 12) return `${n.slice(0,2)}.${n.slice(2,5)}.${n.slice(5,8)}/${n.slice(8)}`;
+  return `${n.slice(0,2)}.${n.slice(2,5)}.${n.slice(5,8)}/${n.slice(8,12)}-${n.slice(12)}`;
+};
+
 function Login({ onAuth }) {
   const [isCadastro, setIsCadastro] = useState(false);
   const [email, setEmail] = useState('');
@@ -27,9 +76,24 @@ function Login({ onAuth }) {
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [endereco, setEndereco] = useState('');
+  const [cnpj, setCnpj] = useState('');
+  const [responsavel, setResponsavel] = useState('');
+  const [docs, setDocs] = useState({ cnpj: null, identidade: null, comprovante: null, contrato: null });
+  const [erroDoc, setErroDoc] = useState('');
   const [erro, setErro] = useState('');
   const [msgRecuperacao, setMsgRecuperacao] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const escolherDoc = async (chave, file) => {
+    if (!file) return;
+    setErroDoc('');
+    try {
+      const doc = await processarArquivoDoc(file);
+      setDocs(d => ({ ...d, [chave]: doc }));
+    } catch (e) {
+      setErroDoc('❌ ' + (e.message || 'Erro no arquivo.'));
+    }
+  };
 
   const enviarRecuperacao = async () => {
     setErro('');
@@ -69,15 +133,19 @@ function Login({ onAuth }) {
             throw errCadastro;
           }
         }
+        const documentos = {};
+        Object.entries(docs).forEach(([k, v]) => { if (v) documentos[k] = v; });
         await set(ref(db, `empresas/${cred.user.uid}`), {
           nome: nome.trim(), email,
           telefone: telefone.replace(/\D/g, ''),
-          endereco, createdAt: Date.now()
+          endereco, cnpj: cnpj.replace(/\D/g, ''), responsavel: responsavel.trim(),
+          documentos, createdAt: Date.now()
         });
         await set(ref(db, `aprovacoes/${cred.user.uid}`), {
           tipo: 'empresa', nome: nome.trim(), email,
           telefone: telefone.replace(/\D/g, ''),
-          endereco,
+          endereco, cnpj: cnpj.replace(/\D/g, ''), responsavel: responsavel.trim(),
+          documentos,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
         });
         onAuth(cred.user);
@@ -123,8 +191,41 @@ function Login({ onAuth }) {
           {isCadastro && (
             <>
               <input type="text" placeholder="Nome da Empresa *" value={nome} onChange={e=>setNome(e.target.value)} required />
+              <input type="text" placeholder="CNPJ (00.000.000/0000-00)" value={cnpj} onChange={e=>setCnpj(formatarCnpj(e.target.value))} maxLength={18} />
+              <input type="text" placeholder="Responsável (nome + RG/CPF)" value={responsavel} onChange={e=>setResponsavel(e.target.value)} />
               <input type="tel" placeholder="Telefone (WhatsApp) *" value={telefone} onChange={e=>setTelefone(e.target.value)} required />
               <input type="text" placeholder="Endereço" value={endereco} onChange={e=>setEndereco(e.target.value)} />
+              <div style={{background: '#f1f5f9', border: '1px dashed #94a3b8', borderRadius: 10, padding: 12, marginTop: 4, textAlign: 'left'}}>
+                <div style={{fontSize: '0.78rem', fontWeight: 800, color: '#334155', marginBottom: 4}}>📎 DOCUMENTOS DA EMPRESA (foto ou PDF)</div>
+                <div style={{fontSize: '0.7rem', color: '#64748b', marginBottom: 10, lineHeight: 1.5}}>
+                  Anexe para agilizar sua aprovação pelo administrador.
+                </div>
+                {Object.entries(ROTULOS_DOCS_EMPRESA).map(([chave, rotulo]) => (
+                  <div key={chave} style={{marginBottom: 10}}>
+                    <label style={{display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#475569', marginBottom: 4}}>
+                      {rotulo} {docs[chave] ? '✅' : ''}
+                    </label>
+                    <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                      <label style={{flex: 1, display: 'block', textAlign: 'center', background: docs[chave] ? '#dcfce7' : '#fff',
+                                      border: docs[chave] ? '1px solid #16a34a' : '1px solid #cbd5e1',
+                                      color: docs[chave] ? '#15803d' : '#334155',
+                                      borderRadius: 8, padding: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'}}>
+                        {docs[chave] ? `📄 ${String(docs[chave].nome).slice(0, 22)} — trocar` : '📤 Escolher arquivo'}
+                        <input type="file" accept="image/*,.pdf" style={{display: 'none'}}
+                          onChange={(e) => { escolherDoc(chave, e.target.files?.[0]); e.target.value = ''; }} />
+                      </label>
+                      {docs[chave] && (
+                        <button type="button" onClick={() => setDocs(d => ({ ...d, [chave]: null }))}
+                          style={{background: '#fff', border: '1px solid #cbd5e1', color: '#64748b', borderRadius: 8, padding: '8px 10px', cursor: 'pointer'}}>✕</button>
+                      )}
+                    </div>
+                    {docs[chave]?.tipo?.startsWith('image/') && (
+                      <img src={docs[chave].dados} alt={rotulo} style={{width: '100%', maxHeight: 140, objectFit: 'cover', borderRadius: 8, marginTop: 6, border: '1px solid #cbd5e1'}} />
+                    )}
+                  </div>
+                ))}
+                {erroDoc && <div style={{fontSize: '0.75rem', color: '#dc2626'}}>{erroDoc}</div>}
+              </div>
             </>
           )}
           <input type="email" placeholder="E-mail da Empresa" value={email} onChange={e=>setEmail(e.target.value)} required />
