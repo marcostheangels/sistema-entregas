@@ -32,7 +32,7 @@
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       ".indexOn": ["empresaId", "status", "entregadorId"],
       "$id": {
-        ".read": "auth != null && (data.child('empresaId').val() === auth.uid || data.child('entregadorId').val() === auth.uid || data.child('status').val() === 'pendente' || root.child('admin').child(auth.uid).val() === true) || true",
+        ".read": "auth != null && (data.child('empresaId').val() === auth.uid || data.child('entregadorId').val() === auth.uid || data.child('status').val() === 'pendente' || root.child('admin').child(auth.uid).val() === true)",
         ".write": "auth != null && (root.child('admin').child(auth.uid).val() === true || (!data.exists() && newData.child('empresaId').val() === auth.uid && root.child('empresas').child(auth.uid).exists() && root.child('aprovacoes').child(auth.uid).child('aprovado').val() === true) || (data.exists() && !newData.exists() && data.child('empresaId').val() === auth.uid && data.child('status').val() === 'pendente') || (data.exists() && data.child('empresaId').val() === auth.uid) || (data.exists() && data.child('entregadorId').val() === auth.uid) || (data.exists() && data.child('status').val() === 'pendente' && newData.child('entregadorId').val() === auth.uid))"
       }
     },
@@ -40,7 +40,7 @@
       ".read": "auth != null",
       ".write": "auth != null && root.child('admin').child(auth.uid).val() === true",
       "$uid": {
-        ".read": "auth != null || true",
+        ".read": "auth != null",
         ".write": "auth != null && (auth.uid === $uid || root.child('admin').child(auth.uid).val() === true)",
         "lat": { ".validate": "newData.isNumber()" },
         "lng": { ".validate": "newData.isNumber()" },
@@ -69,6 +69,34 @@
     "recusados": {
       ".read": "auth != null",
       "$uid": {
+        ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
+      }
+    },
+    "banidos": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
+    },
+    "banidosDispositivos": {
+      ".read": "auth != null",
+      "$dev": {
+        ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
+      }
+    },
+    "banidosCpf": {
+      ".read": "auth != null",
+      "$cpf": {
+        ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
+      }
+    },
+    "banidosEmail": {
+      ".read": "auth != null",
+      "$email": {
+        ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
+      }
+    },
+    "banidosTelefone": {
+      ".read": "auth != null",
+      "$tel": {
         ".write": "auth != null && root.child('admin').child(auth.uid).val() === true"
       }
     },
@@ -171,6 +199,7 @@
         "placa": { ".validate": true },
         "endereco": { ".validate": true },
         "documentos": { ".validate": true },
+        "dispositivo": { ".validate": true },
         "aprovado": { ".validate": "newData.val() === false || root.child('admin').child(auth.uid).val() === true" },
         "criadoPor": { ".validate": "newData.val() === auth.uid || root.child('admin').child(auth.uid).val() === true" },
         "criadoEm": { ".validate": "newData.isNumber()" },

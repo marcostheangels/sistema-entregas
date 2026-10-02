@@ -8,9 +8,9 @@ import { auth, db } from './firebase';
 // Conta fixa do administrador principal (senha NUNCA fica no codigo)
 const ADMIN_EMAIL = 'marcostheangels@gmail.com';
 // Versao atual do APK do entregador (atualize junto com entregador/src/App.jsx)
-const APP_VERSAO_ENTREGADOR = '1.4.24';
+const APP_VERSAO_ENTREGADOR = '1.4.25';
 // Carimbo do build (confira no rodape do painel para saber se esta na versao nova)
-const MASTER_BUILD = '2026-10-02 · fix-aprovacao';
+const MASTER_BUILD = '2026-10-02 · ban-ficha';
 
 // Rotulos dos documentos (entregador + empresa)
 const ROTULOS_DOCS = {
@@ -192,7 +192,7 @@ function MapaTempoReal({ posicoes, entregas, entregadores, rastreio }) {
 function PainelAprovacoes({ user }) {
   const [solicitacoes, setSolicitacoes] = useState(null);
   const [grupo, setGrupo] = useState('entregadores'); // 'entregadores' | 'empresas'
-  const [aba, setAba] = useState('pendentes'); // 'pendentes' | 'aprovados'
+  const [aba, setAba] = useState('pendentes'); // 'pendentes' | 'aprovados' | 'recusados'
   const [busca, setBusca] = useState('');
   const [entregas, setEntregas] = useState([]);
   const [posicoes, setPosicoes] = useState({});
@@ -516,6 +516,7 @@ function PainelAprovacoes({ user }) {
           placa: s.placa || p.placa || '',
           endereco: s.endereco || p.endereco || '',
           documentos: s.documentos || p.documentos || {},
+          dispositivo: s.dispositivo || p.dispositivo || '',
           status: p.status || 'disponivel',
           createdAt: p.createdAt || Date.now()
         });
@@ -538,6 +539,28 @@ function PainelAprovacoes({ user }) {
     }
   };
   const revogar = (id) => update(ref(db, `aprovacoes/${id}`), { aprovado: false, aprovadoEm: null });
+
+  // Apaga TODOS os rastros do cadastro (perfil, aprovacao, GPS, presenca, chats).
+  // Usado tanto pelo EXCLUIR quanto pelo RECUSAR (que ainda marca o ban).
+  const limparCadastro = async (id, tipo) => {
+    await remove(ref(db, `aprovacoes/${id}`)).catch(() => {});
+    await remove(ref(db, `${tipo === 'empresa' ? 'empresas' : 'entregadores'}/${id}`)).catch(() => {});
+    await remove(ref(db, `posicoes/${id}`)).catch(() => {});
+    await remove(ref(db, `presenca/${id}`)).catch(() => {});
+    await remove(ref(db, `conversas_master/${id}`)).catch(() => {});
+    await remove(ref(db, `conversas_master_emp/${id}`)).catch(() => {});
+    await remove(ref(db, `avisos/${id}`)).catch(() => {});
+    const snap = await get(ref(db, 'mensagens')).catch(() => null);
+    if (snap?.exists()) {
+      const updates = {};
+      snap.forEach(c => {
+        const m = c.val() || {};
+        if (m.entregadorId === id || m.empresaId === id) updates[c.key] = null;
+      });
+      if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
+    }
+  };
+
   // Excluir = remocao TOTAL do sistema: aprovacao + perfil + GPS + presenca + chats.
   // Marca em "recusados" para o app NAO recriar a solicitacao.
   const excluir = async (id) => {
@@ -546,23 +569,130 @@ function PainelAprovacoes({ user }) {
     if (!window.confirm(`Excluir ${tipo === 'empresa' ? 'a empresa' : 'o entregador'} ${s.nome || s.email || ''}?\n\nSerão apagados: cadastro, perfil, localização e chats.\nLembre-se: a conta de LOGIN só é apagada no Firebase Console > Authentication.`)) return;
     try {
       await set(ref(db, `recusados/${id}`), { email: s.email || '', nome: s.nome || '', ts: Date.now() }).catch(() => {});
-      await remove(ref(db, `aprovacoes/${id}`));
-      // Perfil + rastreamento + presenca
-      await remove(ref(db, `${tipo === 'empresa' ? 'empresas' : 'entregadores'}/${id}`)).catch(() => {});
-      await remove(ref(db, `posicoes/${id}`)).catch(() => {});
-      await remove(ref(db, `presenca/${id}`)).catch(() => {});
-      // Chats: apaga mensagens ligadas a este uid
-      const snap = await get(ref(db, 'mensagens')).catch(() => null);
-      if (snap?.exists()) {
-        const updates = {};
-        snap.forEach(c => {
-          const m = c.val() || {};
-          if (m.entregadorId === id || m.empresaId === id) updates[c.key] = null;
-        });
-        if (Object.keys(updates).length) await update(ref(db, 'mensagens'), updates);
-      }
+      await limparCadastro(id, tipo);
     } catch (e) {
       window.alert('Erro ao excluir: ' + e.message);
+    }
+  };
+
+  // ===== BAN COM MOTIVO: recusa + bloqueia novos cadastros (aparelho, CPF, tel, e-mail) =====
+  // O motivo aparece no app do entregador. DESBANIR libera de novo (aba Recusados).
+  const [banidos, setBanidos] = useState({});
+  const [recusaAberta, setRecusaAberta] = useState(null);
+  const [recusaMotivo, setRecusaMotivo] = useState('');
+  useEffect(() => {
+    const u = onValue(ref(db, 'banidos'), snap => setBanidos(snap.val() || {}), () => {});
+    return u;
+  }, []);
+  const chaveEmailBan = (e) => String(e || '').trim().toLowerCase().replace(/\./g, ',');
+
+  const recusarComMotivo = async (id) => {
+    const motivo = recusaMotivo.trim().slice(0, 300);
+    if (!motivo) { window.alert('Escreva o motivo da recusa (o entregador vai ler no app).'); return; }
+    const s = solicitacoes?.[id] || {};
+    const tipo = s.tipo || 'entregador';
+    const rotulo = tipo === 'empresa' ? 'a empresa' : 'o entregador';
+    if (!window.confirm(`⛔ RECUSAR e BLOQUEAR ${rotulo} ${s.nome || s.email || ''}?\n\nMotivo: "${motivo}"\n\nEle verá o motivo no app e NÃO conseguirá criar cadastro novo (nem com outro CPF/e-mail/telefone no mesmo aparelho).\nSó volta se você DESBANIR na aba Recusados.`)) return;
+    try {
+      const no = tipo === 'empresa' ? 'empresas' : 'entregadores';
+      const p = (await get(ref(db, `${no}/${id}`)).catch(() => null))?.val() || {};
+      const cpf = String(s.cpf || p.cpf || '').replace(/\D/g, '');
+      const tel = String(s.telefone || p.telefone || '').replace(/\D/g, '');
+      const email = String(s.email || p.email || '').trim().toLowerCase();
+      const dev = String(s.dispositivo || p.dispositivo || '');
+      const ts = Date.now();
+      const registro = {
+        nome: s.nome || p.nome || '', email,
+        cpf, telefone: tel, dispositivo: dev,
+        motivo, tipo, ts, por: user.email
+      };
+      await set(ref(db, `banidos/${id}`), registro);
+      if (dev) await set(ref(db, `banidosDispositivos/${dev}`), { uid: id, ts }).catch(() => {});
+      if (cpf) await set(ref(db, `banidosCpf/${cpf}`), { uid: id, ts }).catch(() => {});
+      if (email) await set(ref(db, `banidosEmail/${chaveEmailBan(email)}`), { uid: id, ts }).catch(() => {});
+      if (tel) await set(ref(db, `banidosTelefone/${tel}`), { uid: id, ts }).catch(() => {});
+      await set(ref(db, `recusados/${id}`), { email, nome: registro.nome, motivo, ts }).catch(() => {});
+      await limparCadastro(id, tipo);
+      setRecusaAberta(null);
+      setRecusaMotivo('');
+    } catch (e) {
+      window.alert('Erro ao recusar: ' + e.message);
+    }
+  };
+
+  // DESBANIR = muda de ideia: libera a pessoa para cadastrar de novo
+  const desbanir = async (id) => {
+    const b = banidos?.[id] || {};
+    if (!window.confirm(`✅ LIBERAR ${b.nome || b.email || id}?\n\nEle poderá fazer cadastro novo na plataforma.`)) return;
+    try {
+      if (b.dispositivo) await remove(ref(db, `banidosDispositivos/${b.dispositivo}`)).catch(() => {});
+      if (b.cpf) await remove(ref(db, `banidosCpf/${String(b.cpf).replace(/\D/g, '')}`)).catch(() => {});
+      if (b.email) await remove(ref(db, `banidosEmail/${chaveEmailBan(b.email)}`)).catch(() => {});
+      if (b.telefone) await remove(ref(db, `banidosTelefone/${String(b.telefone).replace(/\D/g, '')}`)).catch(() => {});
+      await remove(ref(db, `banidos/${id}`)).catch(() => {});
+      await remove(ref(db, `recusados/${id}`)).catch(() => {});
+    } catch (e) {
+      window.alert('Erro ao liberar: ' + e.message);
+    }
+  };
+
+  // ===== FICHA DO ENTREGADOR: baixa dados + fotos num arquivo HTML (salve numa pasta) =====
+  const escHtml = (v) => String(v ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const nomeArquivo = (s) => `ficha-${String(s.nome || s.email || s.id).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'entregador'}-${String(s.id).slice(-6)}.html`;
+  const gerarFichaHtml = (s, perfil) => {
+    const p = perfil || {};
+    const docs = s.documentos || p.documentos || {};
+    const linhas = [
+      ['Nome', s.nome || p.nome], ['E-mail', s.email || p.email], ['Telefone', s.telefone || p.telefone],
+      ['CPF', s.cpf || p.cpf], ['CNPJ', s.cnpj || p.cnpj], ['Responsável', s.responsavel || p.responsavel],
+      ['Veículo', s.veiculo || p.veiculo], ['Placa', s.placa || p.placa], ['Endereço', s.endereco || p.endereco],
+      ['Status', s.aprovado ? 'APROVADO' : 'AGUARDANDO APROVAÇÃO'],
+      ['Solicitado em', (s.criadoEm || p.createdAt) ? new Date(s.criadoEm || p.createdAt).toLocaleString('pt-BR') : '—']
+    ];
+    const docsHtml = Object.keys(docs).length
+      ? Object.entries(docs).map(([chave, doc]) => {
+          const rot = ROTULOS_DOCS[chave] || chave;
+          const midia = String(doc?.tipo || '').startsWith('image/') && doc?.dados
+            ? `<img src="${doc.dados}" style="max-width:100%;max-height:420px;border:1px solid #ccc;border-radius:6px;" />`
+            : (doc?.dados ? `<p><a href="${doc.dados}" download="${escHtml(doc?.nome || chave)}">⬇️ Baixar ${escHtml(doc?.nome || 'documento')}</a> (PDF/arquivo)</p>` : '<p>Arquivo vazio.</p>');
+          return `<div style="margin-bottom:18px;border:1px solid #ddd;border-radius:8px;padding:10px;"><h3>${escHtml(rot)}</h3>${midia}</div>`;
+        }).join('')
+      : '<p>Nenhum documento anexado.</p>';
+    return `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8" /><title>Ficha — ${escHtml(s.nome || s.email)}</title></head>` +
+      `<body style="font-family:Arial,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#111;">` +
+      `<h1>🛵 Ficha do entregador — ${escHtml(s.nome || s.email)}</h1>` +
+      `<p style="color:#555">ConectaEntregas · gerada em ${new Date().toLocaleString('pt-BR')}</p>` +
+      `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:20px;">` +
+      linhas.map(([k, v]) => `<tr><td style="font-weight:bold;background:#f3f4f6;width:180px;">${escHtml(k)}</td><td>${escHtml(v)}</td></tr>`).join('') +
+      `</table><h2>📎 Documentos</h2>${docsHtml}</body></html>`;
+  };
+  const baixarFicha = (s) => {
+    try {
+      const perfil = (s.tipo === 'empresa' ? {} : entregadores[s.id]) || {};
+      const blob = new Blob([gerarFichaHtml(s, perfil)], { type: 'text/html;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = nomeArquivo(s);
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) {
+      window.alert('Erro ao gerar ficha: ' + e.message);
+    }
+  };
+  // Baixa a ficha de TODOS os entregadores da lista (um arquivo por vez — o navegador pode pedir permissão)
+  const [baixandoFichas, setBaixandoFichas] = useState(false);
+  const baixarTodasFichas = async () => {
+    const alvos = lista.filter(s => s.tipo === 'entregador');
+    if (!alvos.length) { window.alert('Nenhum entregador na lista.'); return; }
+    if (!window.confirm(`📥 BAIXAR ${alvos.length} FICHA(S)?\n\nSerá um arquivo HTML por entregador (dados + fotos). Guarde numa pasta.\nO navegador pode pedir permissão para múltiplos downloads — autorize.`)) return;
+    setBaixandoFichas(true);
+    try {
+      for (const s of alvos) {
+        baixarFicha(s);
+        await new Promise(r => setTimeout(r, 700));
+      }
+    } finally {
+      setBaixandoFichas(false);
     }
   };
 
@@ -819,6 +949,10 @@ function PainelAprovacoes({ user }) {
           <h3>✅ Aprovados</h3>
           <p>{aprovadas.length}</p>
         </button>
+        <button className={`admin-stat ${aba === 'recusados' ? 'active' : ''}`} onClick={() => setAba('recusados')}>
+          <h3>⛔ Recusados</h3>
+          <p>{Object.keys(banidos).length}</p>
+        </button>
       </div>
 
       <div className="admin-busca">
@@ -992,7 +1126,42 @@ function PainelAprovacoes({ user }) {
         </div>
       </div>
 
+      {grupo === 'entregadores' && aba !== 'recusados' && (
+        <div style={{display: 'flex', justifyContent: 'flex-end', marginBottom: 8}}>
+          <button className="admin-btn backup" onClick={baixarTodasFichas} disabled={baixandoFichas}>
+            {baixandoFichas ? 'BAIXANDO...' : `📥 BAIXAR FICHAS COM FOTOS (${lista.filter(s => s.tipo === 'entregador').length})`}
+          </button>
+        </div>
+      )}
+
       <div className="admin-lista">
+        {aba === 'recusados' ? (
+          Object.keys(banidos).length === 0 ? (
+            <div className="admin-vazio">Nenhum cadastro recusado/bloqueado.</div>
+          ) : (
+            Object.entries(banidos)
+              .map(([id, b]) => ({ id, ...b }))
+              .sort((a, b2) => (b2.ts || 0) - (a.ts || 0))
+              .filter(b => !termo || (b.nome || '').toLowerCase().includes(termo) || (b.email || '').toLowerCase().includes(termo) || (b.motivo || '').toLowerCase().includes(termo))
+              .map(b => (
+                <div key={b.id} className="admin-item">
+                  <div className="admin-item-badge">
+                    <span className="badge-status suspenso">⛔ RECUSADO/BLOQUEADO</span>
+                  </div>
+                  <div className="admin-item-info">
+                    <div className="admin-item-nome">{b.nome || 'Sem nome'}</div>
+                    <div className="admin-item-email">{b.email}</div>
+                    <div className="admin-item-data">Recusado em {b.ts ? new Date(b.ts).toLocaleString('pt-BR') : '--'}</div>
+                    <div className="admin-item-data" style={{color: '#fca5a5'}}>Motivo: {b.motivo || '—'}</div>
+                  </div>
+                  <div className="admin-item-acoes">
+                    <button className="admin-btn aprovar" onClick={() => desbanir(b.id)}>✅ DESBANIR (LIBERAR)</button>
+                  </div>
+                </div>
+              ))
+          )
+        ) : (
+        <>
         {visivel.length === 0 && (
           <div className="admin-vazio">
             {termo
@@ -1028,8 +1197,14 @@ function PainelAprovacoes({ user }) {
             </div>
             <div className="admin-item-acoes">
               <button className="admin-btn dados" onClick={() => verDados(s)}>VER DADOS</button>
+              {grupo === 'entregadores' && (
+                <button className="admin-btn backup" onClick={() => baixarFicha(s)}>📥 FICHA</button>
+              )}
               {!s.aprovado ? (
-                <button className="admin-btn aprovar" onClick={() => aprovar(s.id)}>APROVAR</button>
+                <>
+                  <button className="admin-btn aprovar" onClick={() => aprovar(s.id)}>APROVAR</button>
+                  <button className="admin-btn excluir" onClick={() => { setRecusaAberta(recusaAberta === s.id ? null : s.id); setRecusaMotivo(''); }}>⛔ RECUSAR</button>
+                </>
               ) : (
                 <>
                   {grupo === 'entregadores' && (
@@ -1065,8 +1240,23 @@ function PainelAprovacoes({ user }) {
                 <button className="admin-btn dados" onClick={() => setBloqAberto(null)}>VOLTAR</button>
               </div>
             )}
+            {recusaAberta === s.id && !s.aprovado && (
+              <div style={{flexBasis: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)',
+                           borderRadius: 10, padding: 10, marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center'}}>
+                <span style={{fontSize: '0.72rem', fontWeight: 800, color: '#f87171', width: '100%'}}>
+                  ⛔ RECUSAR {(s.nome || s.email || '').toUpperCase()} — ele lerá o motivo no app e NÃO conseguirá criar outro cadastro
+                </span>
+                <input type="text" placeholder="Motivo da recusa (ex.: documento ilegível, CNH vencida...)" value={recusaMotivo}
+                  onChange={e => setRecusaMotivo(e.target.value)} maxLength={300}
+                  style={{flex: 1, minWidth: 200, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: '8px', color: '#f8fafc'}} />
+                <button className="admin-btn excluir" onClick={() => recusarComMotivo(s.id)}>CONFIRMAR RECUSA</button>
+                <button className="admin-btn dados" onClick={() => { setRecusaAberta(null); setRecusaMotivo(''); }}>VOLTAR</button>
+              </div>
+            )}
           </div>
         ))}
+        </>
+        )}
       </div>
 
       <div className="admin-monitor">

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail, signOut, deleteUser } from 'firebase/auth';
 import { ref, set, get, remove } from 'firebase/database';
+import { Device } from '@capacitor/device';
 import { auth, db } from './firebase';
 
 // Login cruzado: conta de EMPRESA (ou outro tipo) nao entra no app do entregador.
@@ -11,6 +12,64 @@ const verificarTipoConta = async (uid) => {
     const tipo = a.val()?.tipo;
     if (tipo && tipo !== 'entregador') return tipo;
   } catch { /* se falhar a leitura, deixa o App.jsx bloquear pelo listener */ }
+  return null;
+};
+
+// CPF valido de verdade (digitos verificadores; rejeita 000..., 111... etc.)
+export const cpfValido = (cpf) => {
+  const n = String(cpf || '').replace(/\D/g, '');
+  if (n.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(n)) return false;
+  let soma = 0;
+  for (let i = 0; i < 9; i++) soma += Number(n[i]) * (10 - i);
+  let d1 = (soma * 10) % 11;
+  if (d1 === 10) d1 = 0;
+  if (d1 !== Number(n[9])) return false;
+  soma = 0;
+  for (let i = 0; i < 10; i++) soma += Number(n[i]) * (11 - i);
+  let d2 = (soma * 10) % 11;
+  if (d2 === 10) d2 = 0;
+  return d2 === Number(n[10]);
+};
+
+// Identificador estavel do aparelho (sobrevive a reinstalacao no Android).
+// Usado no bloqueio do Master: aparelho banido nao cria cadastro novo.
+export const obterIdDispositivo = async () => {
+  try {
+    const r = await Device.getId();
+    if (r?.identifier) return 'native:' + String(r.identifier).replace(/[.$#[\]/]/g, '_');
+  } catch { /* cai no fallback */ }
+  let id = null;
+  try { id = localStorage.getItem('ga_device_id'); } catch { /* sem storage */ }
+  if (!id) {
+    id = 'web:' + (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`);
+    try { localStorage.setItem('ga_device_id', id); } catch { /* sem storage */ }
+  }
+  return id;
+};
+
+const chaveEmailBan = (e) => String(e || '').trim().toLowerCase().replace(/\./g, ',');
+
+// Procura o aparelho, CPF, telefone ou e-mail na lista de banidos do Master.
+// Devolve o registro do ban (com o motivo) ou null.
+export const verificarBanimento = async ({ cpfNums, telNums, email, dispositivo }) => {
+  const leituras = [];
+  if (dispositivo) leituras.push(get(ref(db, `banidosDispositivos/${dispositivo}`)));
+  if (cpfNums) leituras.push(get(ref(db, `banidosCpf/${cpfNums}`)));
+  if (telNums) leituras.push(get(ref(db, `banidosTelefone/${telNums}`)));
+  if (email) leituras.push(get(ref(db, `banidosEmail/${chaveEmailBan(email)}`)));
+  if (!leituras.length) return null;
+  const resultados = await Promise.all(leituras);
+  for (const r of resultados) {
+    const banUid = r.val()?.uid;
+    if (banUid) {
+      try {
+        const snap = await get(ref(db, `banidos/${banUid}`));
+        if (snap.exists()) return snap.val();
+      } catch { /* sem leitura: bloqueia com motivo generico */ }
+      return { motivo: '' };
+    }
+  }
   return null;
 };
 
@@ -57,8 +116,19 @@ const ROTULOS_DOCS_ENTREGADOR = {
 
 export default function Auth({ onAuth, versao }) {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
+  // "Lembrar meus dados": preenche e-mail/senha salvos no aparelho
+  const [email, setEmail] = useState(() => {
+    try { return (localStorage.getItem('ga_lembrar') !== '0' ? localStorage.getItem('ga_email') : '') || ''; }
+    catch { return ''; }
+  });
+  const [senha, setSenha] = useState(() => {
+    try { return (localStorage.getItem('ga_lembrar') !== '0' ? localStorage.getItem('ga_senha') : '') || ''; }
+    catch { return ''; }
+  });
+  const [lembrar, setLembrar] = useState(() => {
+    try { return localStorage.getItem('ga_lembrar') !== '0'; }
+    catch { return true; }
+  });
   const [msgRecuperacao, setMsgRecuperacao] = useState('');
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
@@ -114,8 +184,11 @@ export default function Auth({ onAuth, versao }) {
 
     try {
       // Credenciais para o servico nativo de GPS se autenticar no Firebase (seguranca do banco)
-      localStorage.setItem('ga_email', email);
-      localStorage.setItem('ga_senha', senha);
+      try {
+        localStorage.setItem('ga_email', email);
+        localStorage.setItem('ga_senha', senha);
+        localStorage.setItem('ga_lembrar', lembrar ? '1' : '0');
+      } catch { /* sem storage */ }
 
       if (isLogin) {
         const cred = await signInWithEmailAndPassword(auth, email, senha);
@@ -128,10 +201,16 @@ export default function Auth({ onAuth, versao }) {
             : '⚠️ Esta conta não é de entregador.');
           return;
         }
-        // Auto-reparo: se o perfil foi apagado (ex.: reset pelo admin), recria a partir da aprovacao
+        // Auto-reparo: se o perfil foi apagado (ex.: reset pelo admin), recria a partir da aprovacao.
+        // Banido pelo Master: NAO recria nada (o App mostra o motivo).
         try {
           const p = await get(ref(db, `entregadores/${cred.user.uid}`));
           if (!p.exists()) {
+            const [snapBan, snapRec] = await Promise.all([
+              get(ref(db, `banidos/${cred.user.uid}`)).catch(() => ({ exists: () => false })),
+              get(ref(db, `recusados/${cred.user.uid}`)).catch(() => ({ exists: () => false }))
+            ]);
+            if (snapBan.exists() || snapRec.exists()) { onAuth(cred.user); return; }
             const a = await get(ref(db, `aprovacoes/${cred.user.uid}`));
             const d = a.val() || {};
             await set(ref(db, `entregadores/${cred.user.uid}`), {
@@ -152,6 +231,12 @@ export default function Auth({ onAuth, versao }) {
       } else {
         if (!nome || !telefone || !cpf) {
           setError('Preencha os campos obrigatórios (Nome, Telefone, CPF)');
+          setLoading(false);
+          return;
+        }
+        const cpfNums = cpf.replace(/\D/g, '');
+        if (!cpfValido(cpfNums)) {
+          setError('⚠️ CPF inválido. Confira os 11 números digitados.');
           setLoading(false);
           return;
         }
@@ -178,6 +263,23 @@ export default function Auth({ onAuth, versao }) {
           }
         }
 
+        // Bloqueio do Master: aparelho, CPF, telefone ou e-mail banidos
+        // NAO criam cadastro novo — mostra o motivo e sai (vale p/ qualquer dado novo)
+        const dispositivo = await obterIdDispositivo().catch(() => '');
+        const ban = await verificarBanimento({
+          cpfNums, telNums: telefone.replace(/\D/g, ''), email, dispositivo
+        }).catch(() => null);
+        if (ban) {
+          try {
+            await remove(ref(db, `entregadores/${cred.user.uid}`)).catch(() => {});
+            await remove(ref(db, `aprovacoes/${cred.user.uid}`)).catch(() => {});
+          } catch { /* segue para apagar a conta */ }
+          try { await deleteUser(cred.user); } catch { try { await signOut(auth); } catch { /* sem sessao */ } }
+          setError(`⛔ Cadastro bloqueado pelo administrador.${ban.motivo ? `\nMotivo: ${ban.motivo}` : '\nFale com o ConectaEntregas para resolver.'}`);
+          setLoading(false);
+          return;
+        }
+
         await updateProfile(cred.user, { displayName: nome });
 
         // Documentos anexados (fotos comprimidas em base64 — o Master vê no painel)
@@ -188,11 +290,12 @@ export default function Auth({ onAuth, versao }) {
           nome,
           email,
           telefone: telefone.replace(/\D/g, ''),
-          cpf: cpf.replace(/\D/g, ''),
+          cpf: cpfNums,
           veiculo,
           placa: placa.toUpperCase(),
           endereco,
           documentos,
+          dispositivo,
           status: 'disponivel',
           createdAt: Date.now()
         });
@@ -201,16 +304,17 @@ export default function Auth({ onAuth, versao }) {
         const pedidoFull = {
           tipo: 'entregador', nome, email,
           telefone: telefone.replace(/\D/g, ''),
-          cpf: cpf.replace(/\D/g, ''),
+          cpf: cpfNums,
           veiculo,
           placa: placa.toUpperCase(),
           endereco,
           documentos,
+          dispositivo,
           aprovado: false, criadoPor: cred.user.uid, criadoEm: Date.now()
         };
         // Pedido mínimo (sem os campos novos) — garante que o Master veja a
         // solicitação mesmo se as regras do banco ainda forem as antigas
-        const { documentos: _docsFora, ...pedidoMinimo } = pedidoFull;
+        const { documentos: _docsFora, dispositivo: _devFora, ...pedidoMinimo } = pedidoFull;
         try {
           await set(ref(db, `aprovacoes/${cred.user.uid}`), pedidoFull);
         } catch {
@@ -405,6 +509,20 @@ export default function Auth({ onAuth, versao }) {
               required
             />
           </div>
+
+          <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                          background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)',
+                          borderRadius: 10, padding: '10px 12px'}}>
+            <input
+              type="checkbox"
+              checked={lembrar}
+              onChange={(e) => setLembrar(e.target.checked)}
+              style={{width: 18, height: 18, accentColor: '#6366f1', flexShrink: 0}}
+            />
+            <span style={{fontSize: '0.78rem', color: '#cbd5e1', lineHeight: 1.4}}>
+              💾 <strong>Salvar meus dados</strong> neste aparelho (entra direto na próxima vez)
+            </span>
+          </label>
 
           {error && <div className="error" style={{fontSize: '0.8rem', marginBottom: 10}}>{error}</div>}
           {isLogin && msgRecuperacao && (

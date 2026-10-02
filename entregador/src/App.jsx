@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, get, onValue, set } from 'firebase/database';
 import { auth, db } from './firebase';
-import Auth from './Auth';
+import Auth, { cpfValido, obterIdDispositivo } from './Auth';
 import Dashboard from './Dashboard';
 import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 // Versao deste APK. Ao publicar versao nova: aumente aqui, gere o APK e copie para docs/apk/
-export const APP_VERSAO = '1.4.24';
+export const APP_VERSAO = '1.4.25';
 
 // Compara "1.2.3" com "1.10.0" corretamente
 const versaoMenorQue = (a, b) => {
@@ -99,6 +99,41 @@ function AguardandoAprovacao({ user, versao }) {
   );
 }
 
+// Conta BANIDA/RECUSADA pelo Master: mostra o motivo e trava tudo.
+// So volta a funcionar se o Master liberar (desbanir) no painel admin.
+function ContaBanida({ motivo, versao }) {
+  return (
+    <div className="auth-wrapper">
+      <div className="auth-card animate-fade" style={{textAlign: 'center'}}>
+        <div className="auth-header">
+          <div className="auth-logo">⛔</div>
+          <h1 className="auth-title">Cadastro não aprovado</h1>
+          <p style={{color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8, lineHeight: 1.5}}>
+            Seu cadastro não foi aceito na plataforma.
+          </p>
+          {motivo ? (
+            <div style={{background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)',
+                         borderRadius: 10, padding: '12px', marginTop: 12, textAlign: 'left'}}>
+              <div style={{fontSize: '0.7rem', fontWeight: 800, color: '#f87171', marginBottom: 4}}>MOTIVO DO ADMINISTRADOR:</div>
+              <div style={{fontSize: '0.85rem', color: '#fecaca', lineHeight: 1.5}}>{motivo}</div>
+            </div>
+          ) : (
+            <p style={{color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 12}}>
+              Fale com o ConectaEntregas para mais informações.
+            </p>
+          )}
+        </div>
+        <button className="btn-primary" style={{marginTop: 20}} onClick={() => signOut(auth)}>SAIR</button>
+        {versao && (
+          <div style={{textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 14}}>
+            ConectaEntregas Entregador · v{versao}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Conta de outro painel (ex.: empresa) tentando entrar no app do entregador: BLOQUEIA
 function ContaIncorreta({ user, tipo, versao }) {
   const msg = tipo === 'empresa'
@@ -149,6 +184,10 @@ function CompletarCadastro({ user, dados }) {
     setError('');
     if (!nome || !telefone || !cpf) {
       setError('Preencha os campos obrigatórios (Nome, Telefone, CPF)');
+      return;
+    }
+    if (!cpfValido(cpf)) {
+      setError('⚠️ CPF inválido. Confira os 11 números digitados.');
       return;
     }
     setLoading(true);
@@ -235,6 +274,7 @@ function App() {
   const [tipoConta, setTipoConta] = useState(null); // 'entregador' | 'empresa' | ... — bloqueia login cruzado
   const [criandoSolicitacao, setCriandoSolicitacao] = useState(false); // recriando pedido de aprovacao orfao
   const [erroSolicitacao, setErroSolicitacao] = useState(null); // null | 'recusado' | 'falha'
+  const [banInfo, setBanInfo] = useState(null); // registro do ban (com o motivo do Master)
   const [versaoMinima, setVersaoMinima] = useState(null);
   const [conexaoFalhou, setConexaoFalhou] = useState(false); // Firebase nao respondeu: tela de erro com tentar de novo
 
@@ -259,6 +299,7 @@ function App() {
       setPerfilCarregando(true);
       setErroSolicitacao(null);
       setCriandoSolicitacao(false);
+      setBanInfo(null);
       if (unsubAprov) { unsubAprov(); unsubAprov = null; }
       if (!u) { setAprovado(null); setLoading(false); return; }
       setLoading(true);
@@ -303,26 +344,42 @@ function App() {
     }).catch(() => {});
   }, [user, aprovado, temPerfil, perfilCarregando, dadosAprov]);
 
+  // Le o ban do Master (motivo exibido na tela; trava tudo, ate refazer cadastro)
+  useEffect(() => {
+    if (!user) { setBanInfo(null); return; }
+    let vivo = true;
+    Promise.all([
+      get(ref(db, `banidos/${user.uid}`)).catch(() => ({ exists: () => false, val: () => null })),
+      get(ref(db, `recusados/${user.uid}`)).catch(() => ({ exists: () => false, val: () => null }))
+    ]).then(([b, r]) => {
+      if (!vivo) return;
+      setBanInfo(b.exists() ? b.val() : (r.exists() ? r.val() : null));
+    }).catch(() => {});
+    return () => { vivo = false; };
+  }, [user]);
+
   // Recupera cadastro ORFAO: tem perfil mas o pedido de aprovacao nao existe
   // (ex.: pedido negado pelas regras antigas antes de publicar as novas).
   // Recria o pedido a partir do perfil — com os documentos — para o Master ver.
   // So vale para perfil RECENTE (7 dias): conta antiga sem registro segue liberada.
-  // Cadastro RECUSADO pelo Master nunca e recriado.
+  // Cadastro BANIDO/RECUSADO pelo Master nunca e recriado.
   useEffect(() => {
-    if (!user || aprovado !== null || perfilCarregando || !temPerfil || criandoSolicitacao || erroSolicitacao) return;
+    if (!user || aprovado !== null || perfilCarregando || !temPerfil || criandoSolicitacao || erroSolicitacao || banInfo) return;
     let cancelado = false;
     (async () => {
       setCriandoSolicitacao(true);
       try {
-        const [snapPerfil, snapRec] = await Promise.all([
+        const [snapPerfil, snapRec, snapBan] = await Promise.all([
           get(ref(db, `entregadores/${user.uid}`)),
-          get(ref(db, `recusados/${user.uid}`))
+          get(ref(db, `recusados/${user.uid}`)).catch(() => ({ val: () => null })),
+          get(ref(db, `banidos/${user.uid}`)).catch(() => ({ val: () => null }))
         ]);
         if (cancelado) return;
-        if (snapRec.val()) { setErroSolicitacao('recusado'); return; }
+        if (snapRec.val() || snapBan.val()) { setErroSolicitacao('recusado'); return; }
         const p = snapPerfil.val() || {};
         const idade = Date.now() - (p.createdAt || 0);
         if (!p.createdAt || idade > 7 * 86400e3) return; // conta antiga: mantem comportamento atual
+        const dispositivo = await obterIdDispositivo().catch(() => '');
         const pedidoFull = {
           tipo: 'entregador',
           nome: p.nome || user.email,
@@ -333,9 +390,10 @@ function App() {
           placa: (p.placa || '').toUpperCase(),
           endereco: p.endereco || '',
           documentos: p.documentos || {},
+          dispositivo: p.dispositivo || dispositivo,
           aprovado: false, criadoPor: user.uid, criadoEm: Date.now()
         };
-        const { documentos: _d, ...pedidoMinimo } = pedidoFull;
+        const { documentos: _d, dispositivo: _dev, ...pedidoMinimo } = pedidoFull;
         try {
           await set(ref(db, `aprovacoes/${user.uid}`), pedidoFull);
         } catch {
@@ -349,7 +407,7 @@ function App() {
       }
     })();
     return () => { cancelado = true; };
-  }, [user, aprovado, temPerfil, perfilCarregando, criandoSolicitacao, erroSolicitacao]);
+  }, [user, aprovado, temPerfil, perfilCarregando, criandoSolicitacao, erroSolicitacao, banInfo]);
 
   if (loading) return conexaoFalhou ? (
     <div className="loading" style={{textAlign:'center', padding:'40px 24px'}}>
@@ -369,6 +427,9 @@ function App() {
   ) : <div className="loading">Carregando...</div>;
 
   if (versaoMinima && versaoMenorQue(APP_VERSAO, versaoMinima)) return <AtualizacaoObrigatoria atual={APP_VERSAO} minima={versaoMinima} />;
+
+  // Banido/recusado pelo Master: mostra o motivo e trava (vale p/ qualquer conta nova que ele tentar criar)
+  if (user && banInfo) return <ContaBanida motivo={banInfo.motivo} versao={APP_VERSAO} />;
 
   // Login cruzado bloqueado: conta de empresa (ou outro tipo) NAO entra no app do entregador
   if (user && tipoConta && tipoConta !== 'entregador') return <ContaIncorreta user={user} tipo={tipoConta} versao={APP_VERSAO} />;
